@@ -1,6 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { AnthropicRequestSchema, OpenAIRequestSchema, type RouterConfig } from '../types/index.js';
-import { AnthropicRouter } from '../router.js';
+import type { AnthropicRouter } from '../router.js';
 
 export interface RouteHandlerContext {
   router: AnthropicRouter;

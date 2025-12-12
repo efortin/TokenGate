@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: anthropic-router
+  namespace: vllm
+  labels:
+    app: anthropic-router
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: anthropic-router
+  template:
+    metadata:
+      labels:
+        app: anthropic-router
+    spec:
+      containers:
+        - name: router
+          image: ghcr.io/efortin/anthropic-router:latest
+          ports:
+            - containerPort: 3456
+              name: http
+          env:
+            - name: PORT
+              value: "3456"
+            - name: HOST
+              value: "0.0.0.0"
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: anthropic-router-secret
+                  key: api-key
+            - name: VLLM_URL
+              value: "http://vllm-api.vllm.svc.cluster.local:8000"
+            - name: VLLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: vllm-secret
+                  key: api-key
+            - name: VLLM_MODEL
+              value: "qwen3-coder-30b-fp8"
+            - name: LOG_LEVEL
+              value: "info"
+            - name: TELEMETRY_ENABLED
+              value: "true"
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: anthropic-router
+  namespace: vllm
+spec:
+  selector:
+    app: anthropic-router
+  ports:
+    - port: 3456
+      targetPort: 3456
+      name: http
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: anthropic-router-secret
+  namespace: vllm
+type: Opaque
+stringData:
+  api-key: "sk-anthropic-router-2024"

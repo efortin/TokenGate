@@ -1,0 +1,42 @@
+{
+  "name": "token-gate",
+  "version": "1.0.0",
+  "description": "A lightweight proxy enabling Anthropic API clients to use vLLM backends",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -b src",
+    "start": "node dist/index.js",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "anthropic",
+    "vllm",
+    "mistral",
+    "tool-calling",
+    "router"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@fastify/cors": "^10.0.0",
+    "fastify": "^5.0.0",
+    "pino": "^9.0.0",
+    "pino-pretty": "^11.0.0",
+    "tiktoken": "^1.0.22"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^2.1.9",
+    "eslint": "^9.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^2.0.0"
+  }
+}

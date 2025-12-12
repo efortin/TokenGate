@@ -1,51 +1,52 @@
 # Token Gate
 
-A lightweight TypeScript proxy that enables [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and other Anthropic API clients to use [vLLM](https://docs.vllm.ai/) backends.
+A lightweight API gateway that enables Anthropic API clients (like Claude Code) to use alternative LLM backends such as vLLM, Ollama, or any OpenAI-compatible server.
+
+## Why Token Gate?
+
+Token Gate acts as a translation layer between Anthropic API clients and OpenAI-compatible backends. This allows you to:
+
+- Use Claude Code with self-hosted models (vLLM, Ollama, etc.)
+- Route vision requests to specialized models
+- Track token usage across requests
+- Maintain a single API interface for multiple backends
 
 ## Features
 
-- **Anthropic API Compatible**: Proxies `/v1/messages` endpoint to vLLM
-- **OpenAI API Compatible**: Also supports `/v1/chat/completions` endpoint
-- **Vision Routing**: Optionally routes image requests to a separate vision-capable model
-- **Token Telemetry**: Tracks token usage per request
-- **Startup Health Check**: Verifies backend connectivity before accepting requests
+- **Dual API Support**: Accepts both Anthropic (`/v1/messages`) and OpenAI (`/v1/chat/completions`) formats
+- **Vision Routing**: Automatically routes image requests to a vision-capable backend
+- **Format Conversion**: Converts between Anthropic and OpenAI formats transparently
+- **Token Telemetry**: Tracks input/output tokens per request
+- **Health Checks**: Verifies backend connectivity at startup
 - **SSE Streaming**: Full support for streaming responses
-
-## Use Cases
-
-- Run Claude Code with local/self-hosted LLMs via vLLM
-- Use any vLLM-compatible model with Anthropic API clients
-- Route vision requests to specialized models (e.g., GPT-4 Vision)
 
 ## Quick Start
 
 ```bash
-# Install dependencies
+# Install
 npm install
 
-# Development (with hot reload)
-npm run dev
+# Run with a vLLM backend
+VLLM_URL=http://localhost:8000 VLLM_MODEL=qwen npm run dev
 
-# Production build
-npm run build
-npm start
+# Test
+curl http://localhost:3456/health
 ```
 
 ## Configuration
-
-All configuration is done via environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | `3456` | Server port |
 | `HOST` | `0.0.0.0` | Server host |
 | `API_KEY` | `sk-anthropic-router` | API key for client authentication |
-| `VLLM_URL` | `http://localhost:8000` | vLLM backend URL |
-| `VLLM_API_KEY` | - | vLLM API key (if required) |
-| `VLLM_MODEL` | `default` | Model name to report to clients |
+| `VLLM_URL` | `http://localhost:8000` | Default backend URL |
+| `VLLM_API_KEY` | - | Backend API key (if required) |
+| `VLLM_MODEL` | `qwen3-coder-30b-fp8` | Model name to use |
 | `VISION_URL` | - | Vision backend URL (optional) |
 | `VISION_API_KEY` | - | Vision backend API key |
 | `VISION_MODEL` | `gpt-4-vision` | Vision model name |
+| `VISION_ANTHROPIC_NATIVE` | `false` | Use Anthropic format for vision backend |
 | `TELEMETRY_ENABLED` | `false` | Enable token usage tracking |
 | `LOG_LEVEL` | `info` | Log level (debug/info/warn/error) |
 
@@ -60,48 +61,7 @@ All configuration is done via environment variables:
 | `GET` | `/health` | Health check |
 | `GET` | `/stats` | Token usage statistics |
 
-## Docker
-
-### Build
-
-```bash
-docker build -t token-gate .
-```
-
-### Run
-
-```bash
-docker run -d --name token-gate \
-  -p 3456:3456 \
-  -e VLLM_URL=http://your-vllm-server:8000 \
-  -e VLLM_API_KEY=your-vllm-api-key \
-  -e VLLM_MODEL=your-model-name \
-  -e API_KEY=your-api-key \
-  token-gate
-```
-
-### Local vLLM (Docker Desktop)
-
-```bash
-docker run -d --name token-gate \
-  -p 3456:3456 \
-  -e VLLM_URL=http://host.docker.internal:8000 \
-  -e VLLM_MODEL=your-model-name \
-  -e API_KEY=your-api-key \
-  token-gate
-```
-
-### Container Management
-
-```bash
-docker logs -f token-gate  # View logs
-docker stop token-gate     # Stop
-docker rm token-gate       # Remove
-```
-
 ## Claude Code Integration
-
-Configure Claude Code to use the router:
 
 ```bash
 export ANTHROPIC_BASE_URL="http://localhost:3456"
@@ -110,79 +70,45 @@ export ANTHROPIC_MODEL="your-model-name"
 claude
 ```
 
-Or create a shell function:
-
-```bash
-function claude-local() {
-  ANTHROPIC_BASE_URL="http://localhost:3456" \
-  ANTHROPIC_API_KEY="your-api-key" \
-  ANTHROPIC_MODEL="your-model-name" \
-  claude "$@"
-}
-```
-
-## Testing
-
-```bash
-# Run tests
-npm test
-
-# Run linter
-npm run lint
-
-# Health check
-curl http://localhost:3456/health
-
-# List models
-curl http://localhost:3456/v1/models
-
-# Chat completion (OpenAI format)
-curl -X POST http://localhost:3456/v1/chat/completions \
-  -H "Authorization: Bearer your-api-key" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "your-model-name",
-    "messages": [{"role": "user", "content": "Hello!"}],
-    "max_tokens": 100
-  }'
-
-# Anthropic format
-curl -X POST http://localhost:3456/v1/messages \
-  -H "x-api-key: your-api-key" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "your-model-name",
-    "messages": [{"role": "user", "content": "Hello!"}],
-    "max_tokens": 100
-  }'
-```
-
 ## Architecture
 
 ```
-┌─────────────────────────────────────────┐
-│              Clients                    │
-│  (Claude Code, OpenWebUI, curl, etc.)   │
-└────────────────┬────────────────────────┘
-                 │
-                 ▼
-┌─────────────────────────────────────────┐
-│            Token Gate                    │
-│  ┌─────────────────────────────────┐    │
-│  │ • Startup health check          │    │
-│  │ • API key validation            │    │
-│  │ • Vision routing (optional)     │    │
-│  │ • Token telemetry               │    │
-│  │ • SSE streaming                 │    │
-│  └─────────────────────────────────┘    │
-└────────────────┬────────────────────────┘
-                 │
-        ┌────────┴────────┐
-        ▼                 ▼
-┌───────────────┐  ┌───────────────┐
-│     vLLM      │  │    Vision     │
-│   (default)   │  │  (optional)   │
-└───────────────┘  └───────────────┘
++------------------+
+|     Clients      |
+| (Claude Code,    |
+|  OpenWebUI, etc) |
++--------+---------+
+         |
+         v
++------------------+
+|   Token Gate     |
+|  - Auth          |
+|  - Routing       |
+|  - Conversion    |
+|  - Telemetry     |
++--------+---------+
+         |
+    +----+----+
+    |         |
+    v         v
++------+  +--------+
+| vLLM |  | Vision |
++------+  +--------+
+```
+
+## Documentation
+
+- [Vision Routing](docs/vision.md) - How to configure vision model routing
+- [Deployment Guide](docs/deployment.md) - Local, Docker, and Kubernetes deployment
+
+## Development
+
+```bash
+npm install      # Install dependencies
+npm run dev      # Development with hot reload
+npm run build    # Production build
+npm test         # Run tests
+npm run lint     # Run linter
 ```
 
 ## License

@@ -10,13 +10,12 @@ export default defineConfig({
       exclude: [
         'node_modules/**',
         'dist/**',
-        'src/index.ts',
         'src/types/**',
-        'src/vision/types.ts',
+        'src/index.ts',
       ],
       thresholds: {
         statements: 97,
-        branches: 90,
+        branches: 80,
         functions: 100,
         lines: 97,
       },

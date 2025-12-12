@@ -1,11 +1,12 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadConfig } from '../src/config.js';
+import {describe, it, expect, beforeEach, afterEach} from 'vitest';
+
+import {loadConfig} from '../src/config.js';
 
 describe('loadConfig', () => {
   const originalEnv = process.env;
 
   beforeEach(() => {
-    process.env = { ...originalEnv };
+    process.env = {...originalEnv};
   });
 
   afterEach(() => {
@@ -19,8 +20,6 @@ describe('loadConfig', () => {
     delete process.env.VLLM_URL;
     delete process.env.VLLM_API_KEY;
     delete process.env.VLLM_MODEL;
-    delete process.env.VISION_URL;
-    delete process.env.TELEMETRY_ENABLED;
     delete process.env.LOG_LEVEL;
 
     const config = loadConfig();
@@ -32,8 +31,6 @@ describe('loadConfig', () => {
     expect(config.defaultBackend.url).toBe('http://localhost:8000');
     expect(config.defaultBackend.apiKey).toBe('');
     expect(config.defaultBackend.model).toBe('');
-    expect(config.visionBackend).toBeUndefined();
-    expect(config.telemetry.enabled).toBe(false);
     expect(config.logLevel).toBe('info');
   });
 
@@ -44,8 +41,6 @@ describe('loadConfig', () => {
     process.env.VLLM_URL = 'http://vllm:8000';
     process.env.VLLM_API_KEY = 'vllm-key';
     process.env.VLLM_MODEL = 'my-model';
-    process.env.TELEMETRY_ENABLED = 'true';
-    process.env.TELEMETRY_ENDPOINT = 'http://telemetry';
     process.env.LOG_LEVEL = 'debug';
 
     const config = loadConfig();
@@ -56,32 +51,7 @@ describe('loadConfig', () => {
     expect(config.defaultBackend.url).toBe('http://vllm:8000');
     expect(config.defaultBackend.apiKey).toBe('vllm-key');
     expect(config.defaultBackend.model).toBe('my-model');
-    expect(config.telemetry.enabled).toBe(true);
-    expect(config.telemetry.endpoint).toBe('http://telemetry');
     expect(config.logLevel).toBe('debug');
-  });
-
-  it('should configure vision backend when VISION_URL is set', () => {
-    process.env.VISION_URL = 'http://vision:8000';
-    process.env.VISION_API_KEY = 'vision-key';
-    process.env.VISION_MODEL = 'gpt-4-vision-preview';
-
-    const config = loadConfig();
-
-    expect(config.visionBackend).toBeDefined();
-    expect(config.visionBackend?.name).toBe('vision');
-    expect(config.visionBackend?.url).toBe('http://vision:8000');
-    expect(config.visionBackend?.apiKey).toBe('vision-key');
-    expect(config.visionBackend?.model).toBe('gpt-4-vision-preview');
-  });
-
-  it('should use default vision model when not specified', () => {
-    process.env.VISION_URL = 'http://vision:8000';
-    delete process.env.VISION_MODEL;
-
-    const config = loadConfig();
-
-    expect(config.visionBackend?.model).toBe('auto');
   });
 
   it('should parse port as integer', () => {

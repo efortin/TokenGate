@@ -5,7 +5,7 @@ export function loadConfig(): RouterConfig {
   return {
     port: parseInt(process.env.PORT ?? '3456', 10),
     host: process.env.HOST ?? '0.0.0.0',
-    apiKey: process.env.API_KEY ?? 'sk-anthropic-router',
+    apiKey: process.env.API_KEY ?? '',
     defaultBackend: {
       name: 'vllm',
       url: process.env.VLLM_URL ?? 'http://localhost:8000',

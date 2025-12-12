@@ -26,7 +26,7 @@ describe('loadConfig', () => {
 
     expect(config.port).toBe(3456);
     expect(config.host).toBe('0.0.0.0');
-    expect(config.apiKey).toBe('sk-anthropic-router');
+    expect(config.apiKey).toBe('');
     expect(config.defaultBackend.name).toBe('vllm');
     expect(config.defaultBackend.url).toBe('http://localhost:8000');
     expect(config.defaultBackend.apiKey).toBe('');

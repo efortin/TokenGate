@@ -39,15 +39,13 @@ curl http://localhost:3456/health
 |----------|---------|-------------|
 | `PORT` | `3456` | Server port |
 | `HOST` | `0.0.0.0` | Server host |
-| `API_KEY` | `sk-anthropic-router` | API key for client authentication |
+| `API_KEY` | - | API key for client authentication |
 | `VLLM_URL` | `http://localhost:8000` | Default backend URL |
 | `VLLM_API_KEY` | - | Backend API key (if required) |
-| `VLLM_MODEL` | `qwen3-coder-30b-fp8` | Model name to use |
+| `VLLM_MODEL` | - | Model name (auto-discovered if not set) |
 | `VISION_URL` | - | Vision backend URL (optional) |
-| `VISION_API_KEY` | - | Vision backend API key |
-| `VISION_MODEL` | `gpt-4-vision` | Vision model name |
-| `VISION_ANTHROPIC_NATIVE` | `false` | Use Anthropic format for vision backend |
-| `TELEMETRY_ENABLED` | `false` | Enable token usage tracking |
+| `VISION_API_KEY` | - | Vision backend API key (falls back to VLLM_API_KEY) |
+| `VISION_MODEL` | - | Vision model name |
 | `LOG_LEVEL` | `info` | Log level (debug/info/warn/error) |
 
 ## API Endpoints

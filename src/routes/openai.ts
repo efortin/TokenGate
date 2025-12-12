@@ -3,18 +3,14 @@ import fp from 'fastify-plugin';
 
 import type {OpenAIRequest, OpenAIResponse} from '../types/index.js';
 import {callBackend, streamBackend} from '../services/backend.js';
-
-const SSE_HEADERS = {
-  'Content-Type': 'text/event-stream',
-  'Cache-Control': 'no-cache',
-  'Connection': 'keep-alive',
-} as const;
-
-function hasImages(body: OpenAIRequest): boolean {
-  const lastMsg = body.messages[body.messages.length - 1];
-  if (!lastMsg || !Array.isArray(lastMsg.content)) return false;
-  return lastMsg.content.some((part) => part.type === 'image_url');
-}
+import {
+  SSE_HEADERS,
+  StatusCodes,
+  createApiError,
+  formatSseError,
+  getBackendAuth,
+  hasOpenAIImages,
+} from '../utils/index.js';
 
 async function openaiRoutes(app: FastifyInstance): Promise<void> {
   app.post('/v1/chat/completions', async (request, reply) => {
@@ -23,8 +19,10 @@ async function openaiRoutes(app: FastifyInstance): Promise<void> {
     const body = request.body as OpenAIRequest;
     const authHeader = request.headers.authorization;
 
-    const useVision = hasImages(body) && app.config.visionBackend;
-    const backend = useVision ? app.config.visionBackend! : app.config.defaultBackend;
+    const backend =
+      hasOpenAIImages(body) && app.config.visionBackend
+        ? app.config.visionBackend
+        : app.config.defaultBackend;
 
     try {
       if (body.stream) {
@@ -34,7 +32,7 @@ async function openaiRoutes(app: FastifyInstance): Promise<void> {
       const result = await callBackend<OpenAIResponse>(
         `${backend.url}/v1/chat/completions`,
         {...body, model: backend.model || body.model},
-        backend.apiKey || authHeader,
+        getBackendAuth(backend, authHeader),
       );
 
       recordMetrics(app, user, backend.model, startTime, 'ok', result.usage);
@@ -42,13 +40,8 @@ async function openaiRoutes(app: FastifyInstance): Promise<void> {
     } catch (error) {
       recordMetrics(app, user, backend.model, startTime, 'error');
       request.log.error({err: error}, 'Request failed');
-      reply.code(500);
-      return {
-        error: {
-          type: 'api_error',
-          message: error instanceof Error ? error.message : 'Unknown error',
-        },
-      };
+      reply.code(StatusCodes.INTERNAL_SERVER_ERROR);
+      return createApiError(error instanceof Error ? error.message : 'Unknown error');
     }
   });
 }
@@ -68,19 +61,13 @@ async function handleStream(
     for await (const chunk of streamBackend(
       `${backend.url}/v1/chat/completions`,
       {...body, model: backend.model || body.model, stream: true},
-      backend.apiKey || authHeader,
+      getBackendAuth(backend, authHeader),
     )) {
       reply.raw.write(chunk);
     }
     recordMetrics(app, user, backend.model, startTime, 'ok');
   } catch (error) {
-    const errorEvent = `data: ${JSON.stringify({
-      error: {
-        type: 'api_error',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      },
-    })}\n\n`;
-    reply.raw.write(errorEvent);
+    reply.raw.write(formatSseError(error));
     recordMetrics(app, user, backend.model, startTime, 'error');
   }
 

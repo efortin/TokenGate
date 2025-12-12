@@ -77,57 +77,6 @@ describe('BackendSelector', () => {
     });
   });
 
-  describe('hasVisionContent', () => {
-    it('should detect image in content array', () => {
-      const selector = new BackendSelector(mockConfig);
-      const request: AnthropicRequest = {
-        model: 'test',
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: 'Hello' },
-              { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'abc' } },
-            ],
-          },
-        ],
-        max_tokens: 100,
-      };
-
-      expect(selector.hasVisionContent(request)).toBe(true);
-    });
-
-    it('should return false for text-only messages', () => {
-      const selector = new BackendSelector(mockConfig);
-      const request: AnthropicRequest = {
-        model: 'test',
-        messages: [
-          { role: 'user', content: 'Hello' },
-          { role: 'assistant', content: 'Hi!' },
-        ],
-        max_tokens: 100,
-      };
-
-      expect(selector.hasVisionContent(request)).toBe(false);
-    });
-
-    it('should return false for text content blocks', () => {
-      const selector = new BackendSelector(mockConfig);
-      const request: AnthropicRequest = {
-        model: 'test',
-        messages: [
-          {
-            role: 'user',
-            content: [{ type: 'text', text: 'Hello' }],
-          },
-        ],
-        max_tokens: 100,
-      };
-
-      expect(selector.hasVisionContent(request)).toBe(false);
-    });
-  });
-
   describe('selectForOpenAI', () => {
     it('should return default backend for text-only OpenAI requests', () => {
       const selector = new BackendSelector(mockConfig);

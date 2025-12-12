@@ -62,6 +62,9 @@ export async function handleAnthropicRequest(
   }
 
   const hasToolCalls = result.content?.some(c => c.type === 'tool_use') || false;
+  const hasVision = request.messages.some(msg => 
+    Array.isArray(msg.content) && msg.content.some(block => block.type === 'image')
+  );
 
   if (onTelemetry) {
     onTelemetry({
@@ -73,7 +76,7 @@ export async function handleAnthropicRequest(
       outputTokens: result.usage?.output_tokens || 0,
       latencyMs: Date.now() - startTime,
       hasToolCalls,
-      hasVision: backend.anthropicNative === false,
+      hasVision,
     });
   }
 
@@ -140,7 +143,9 @@ export async function* handleAnthropicStreamingRequest(
       outputTokens: stats.outputTokens,
       latencyMs: Date.now() - startTime,
       hasToolCalls: stats.hasToolCalls,
-      hasVision: false,
+      hasVision: request.messages.some(msg => 
+        Array.isArray(msg.content) && msg.content.some(block => block.type === 'image')
+      ),
     });
   }
 }

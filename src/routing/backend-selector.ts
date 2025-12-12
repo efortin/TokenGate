@@ -44,8 +44,4 @@ export class BackendSelector {
     }
     return false;
   }
-
-  hasVisionContent(request: AnthropicRequest): boolean {
-    return this.hasAnthropicVision(request);
-  }
 }

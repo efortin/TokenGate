@@ -11,14 +11,9 @@ const SSE_HEADERS = {
 } as const;
 
 function hasImages(body: OpenAIRequest): boolean {
-  for (const msg of body.messages) {
-    if (Array.isArray(msg.content)) {
-      for (const part of msg.content) {
-        if (part.type === 'image_url') return true;
-      }
-    }
-  }
-  return false;
+  const lastMsg = body.messages[body.messages.length - 1];
+  if (!lastMsg || !Array.isArray(lastMsg.content)) return false;
+  return lastMsg.content.some((part) => part.type === 'image_url');
 }
 
 async function openaiRoutes(app: FastifyInstance): Promise<void> {

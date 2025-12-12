@@ -11,14 +11,9 @@ const SSE_HEADERS = {
 } as const;
 
 function hasImages(body: AnthropicRequest): boolean {
-  for (const msg of body.messages) {
-    if (Array.isArray(msg.content)) {
-      for (const block of msg.content) {
-        if (block.type === 'image') return true;
-      }
-    }
-  }
-  return false;
+  const lastMsg = body.messages[body.messages.length - 1];
+  if (!lastMsg || !Array.isArray(lastMsg.content)) return false;
+  return lastMsg.content.some((block) => block.type === 'image');
 }
 
 async function anthropicRoutes(app: FastifyInstance): Promise<void> {

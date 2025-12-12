@@ -1,5 +1,5 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
-import { AnthropicRequestSchema, OpenAIRequestSchema, type RouterConfig } from '../types/index.js';
+import type { RouterConfig, AnthropicRequest, OpenAIRequest } from '../types/index.js';
 import type { AnthropicRouter } from '../router.js';
 
 export interface RouteHandlerContext {
@@ -8,10 +8,9 @@ export interface RouteHandlerContext {
 }
 
 export function createAnthropicMessagesHandler(ctx: RouteHandlerContext) {
-  return async (request: FastifyRequest, reply: FastifyReply) => {
+  return async (request: FastifyRequest<{ Body: AnthropicRequest }>, reply: FastifyReply) => {
     const authHeader = request.headers.authorization;
-
-    const body = AnthropicRequestSchema.parse(request.body);
+    const body = request.body; // Already validated by Fastify
 
     try {
       if (body.stream) {
@@ -50,10 +49,9 @@ export function createAnthropicMessagesHandler(ctx: RouteHandlerContext) {
 }
 
 export function createOpenAIChatHandler(ctx: RouteHandlerContext) {
-  return async (request: FastifyRequest, reply: FastifyReply) => {
+  return async (request: FastifyRequest<{ Body: OpenAIRequest }>, reply: FastifyReply) => {
     const authHeader = request.headers.authorization;
-
-    const body = OpenAIRequestSchema.parse(request.body);
+    const body = request.body; // Already validated by Fastify
 
     try {
       if (body.stream) {

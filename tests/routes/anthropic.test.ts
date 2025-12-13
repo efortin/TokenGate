@@ -133,4 +133,104 @@ describe('Anthropic Routes', () => {
       expect(response.statusCode).toBe(200);
     });
   });
+
+  describe('Vision routing', () => {
+    let visionApp: FastifyInstance;
+
+    const visionConfig: AppConfig = {
+      port: 3456,
+      host: '0.0.0.0',
+      apiKey: 'test-key',
+      defaultBackend: {
+        name: 'test',
+        url: 'http://localhost:8000',
+        apiKey: 'test-api-key',
+        model: 'test-model',
+      },
+      visionBackend: {
+        name: 'vision',
+        url: 'http://localhost:9000',
+        apiKey: 'vision-api-key',
+        model: 'vision-model',
+      },
+      logLevel: 'error',
+    };
+
+    beforeAll(async () => {
+      visionApp = await buildApp({config: visionConfig, logger: false});
+    });
+
+    afterAll(async () => {
+      await visionApp.close();
+    });
+
+    it('should route image requests to vision backend', async () => {
+      const mockOpenAIResponse = {
+        id: 'chatcmpl-123',
+        object: 'chat.completion',
+        created: 1234567890,
+        model: 'vision-model',
+        choices: [{
+          index: 0,
+          message: {role: 'assistant', content: 'I see an image'},
+          finish_reason: 'stop',
+        }],
+        usage: {prompt_tokens: 100, completion_tokens: 20, total_tokens: 120},
+      };
+      vi.mocked(callBackend).mockResolvedValue(mockOpenAIResponse);
+
+      const response = await visionApp.inject({
+        method: 'POST',
+        url: '/v1/messages',
+        payload: {
+          model: 'claude-3',
+          messages: [{
+            role: 'user',
+            content: [
+              {type: 'text', text: 'What is this?'},
+              {type: 'image', source: {type: 'base64', media_type: 'image/png', data: 'abc123'}},
+            ],
+          }],
+          max_tokens: 100,
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(callBackend).toHaveBeenCalledWith(
+        'http://localhost:9000/v1/chat/completions',
+        expect.objectContaining({model: 'vision-model'}),
+        'vision-api-key',
+      );
+    });
+
+    it('should stream vision requests to vision backend', async () => {
+      const chunks = ['data: {"choices":[{"delta":{"content":"Hi"}}]}\n\n', 'data: [DONE]\n\n'];
+      vi.mocked(streamBackend).mockImplementation(async function* () {
+        for (const chunk of chunks) {
+          yield chunk;
+        }
+      });
+
+      const response = await visionApp.inject({
+        method: 'POST',
+        url: '/v1/messages',
+        payload: {
+          model: 'claude-3',
+          messages: [{
+            role: 'user',
+            content: [{type: 'image', source: {type: 'base64', media_type: 'image/png', data: 'abc'}}],
+          }],
+          max_tokens: 100,
+          stream: true,
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(streamBackend).toHaveBeenCalledWith(
+        'http://localhost:9000/v1/chat/completions',
+        expect.anything(),
+        'vision-api-key',
+      );
+    });
+  });
 });

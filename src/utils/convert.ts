@@ -1,5 +1,6 @@
 import type {AnthropicRequest, AnthropicResponse, OpenAIRequest, OpenAIResponse} from '../types/index.js';
 import {VISION_SYSTEM_PROMPT} from '../prompts/vision.js';
+import {WEB_SEARCH_SYSTEM_PROMPT} from '../prompts/web-search.js';
 
 export interface ConvertOptions {
   /** Add vision system prompt for image analysis. */
@@ -51,6 +52,26 @@ export function anthropicToOpenAI(req: AnthropicRequest, options: ConvertOptions
     messages,
     max_tokens: req.max_tokens,
     stream: req.stream,
+  };
+}
+
+/** Injects web search system prompt into an Anthropic request. */
+export function injectWebSearchPrompt(req: AnthropicRequest): AnthropicRequest {
+  let existingSystem = '';
+
+  if (typeof req.system === 'string') {
+    existingSystem = req.system;
+  } else if (Array.isArray(req.system)) {
+    existingSystem = req.system.map((block) => block.text || '').join('\n\n');
+  }
+
+  const newSystem = existingSystem
+    ? `${existingSystem}\n\n${WEB_SEARCH_SYSTEM_PROMPT}`
+    : WEB_SEARCH_SYSTEM_PROMPT;
+
+  return {
+    ...req,
+    system: newSystem,
   };
 }
 

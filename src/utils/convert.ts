@@ -559,10 +559,13 @@ export async function* convertOpenAIStreamToAnthropic(
       if (!choice) {
         // Final usage-only chunk - send the final message_delta with stop_reason and usage
         if (chunk.usage && finalStopReason && !messageStopped) {
+          // Include both input_tokens and output_tokens from vLLM
+          const finalInputTokens = chunk.usage.prompt_tokens || inputTokens;
+          const finalOutputTokens = chunk.usage.completion_tokens || outputTokens;
           yield `event: message_delta\ndata: ${JSON.stringify({
             type: 'message_delta',
             delta: {stop_reason: finalStopReason, stop_sequence: null},
-            usage: {output_tokens: chunk.usage.completion_tokens || outputTokens},
+            usage: {input_tokens: finalInputTokens, output_tokens: finalOutputTokens},
           })}\n\n`;
           yield `event: message_stop\ndata: ${JSON.stringify({type: 'message_stop'})}\n\n`;
           messageStopped = true;

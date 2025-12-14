@@ -85,7 +85,21 @@ async function handleStream(
     }
     recordMetrics(app, user, backend.model, startTime, 'ok');
   } catch (error) {
-    app.log.error({err: error, user, model: backend.model}, 'Streaming request failed');
+    // Log detailed error info for debugging
+    const msgCount = body.messages?.length ?? 0;
+    const lastMsg = body.messages?.[msgCount - 1];
+    const lastMsgRole = lastMsg?.role;
+    const lastMsgContentType = Array.isArray(lastMsg?.content) 
+      ? lastMsg.content.map((c: {type?: string}) => c.type).join(',')
+      : 'string';
+    app.log.error({
+      err: error, 
+      user, 
+      model: backend.model,
+      messageCount: msgCount,
+      lastMessageRole: lastMsgRole,
+      lastMessageContentTypes: lastMsgContentType,
+    }, 'Streaming request failed');
     reply.raw.write(formatSseError(error));
     recordMetrics(app, user, backend.model, startTime, 'error');
   }

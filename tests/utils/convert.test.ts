@@ -1,5 +1,5 @@
 import {describe, it, expect} from 'vitest';
-import {anthropicToOpenAI, openAIToAnthropic, injectWebSearchPrompt, parseMistralToolCalls, isMistralModel, sanitizeToolName} from '../../src/utils/convert.js';
+import {anthropicToOpenAI, openAIToAnthropic, injectWebSearchPrompt, parseMistralToolCalls, isMistralModel, sanitizeToolName, normalizeOpenAIToolIds, filterEmptyAssistantMessages} from '../../src/utils/convert.js';
 import type {AnthropicRequest, OpenAIResponse} from '../../src/types/index.js';
 
 describe('anthropicToOpenAI', () => {
@@ -664,5 +664,255 @@ describe('openAIToAnthropic edge cases', () => {
     const result = openAIToAnthropic(res, 'test-model');
     const toolUse = result.content.find(c => c.type === 'tool_use') as {input: {raw?: string}};
     expect(toolUse.input.raw).toBe('not valid json');
+  });
+});
+
+// ============================================================================
+// Mistral vLLM Compatibility Tests
+// These tests cover edge cases for Mistral/vLLM compatibility handled by the proxy
+// ============================================================================
+
+describe('normalizeOpenAIToolIds - Mistral compatibility', () => {
+  // Import the function being tested
+
+  describe('index field stripping', () => {
+    it('should strip index field from tool_calls', () => {
+      const req = {
+        model: 'devstral',
+        messages: [
+          {role: 'user', content: 'Hello'},
+          {
+            role: 'assistant',
+            content: null,
+            tool_calls: [{
+              index: 0,
+              id: 'call_123abc',
+              type: 'function',
+              function: {name: 'test', arguments: '{}'},
+            }],
+          },
+        ],
+      };
+
+      const result = normalizeOpenAIToolIds(req);
+      const toolCall = result.messages[1].tool_calls[0];
+      
+      expect(toolCall.index).toBeUndefined();
+      expect(toolCall.id).toBeDefined();
+      expect(toolCall.type).toBe('function');
+    });
+
+    it('should handle tool_calls without index field', () => {
+      const req = {
+        model: 'devstral',
+        messages: [
+          {role: 'user', content: 'Hi'},
+          {
+            role: 'assistant',
+            content: null,
+            tool_calls: [{
+              id: 'call_abc123',
+              type: 'function',
+              function: {name: 'greet', arguments: '{"name":"world"}'},
+            }],
+          },
+        ],
+      };
+
+      const result = normalizeOpenAIToolIds(req);
+      const toolCall = result.messages[1].tool_calls[0];
+      
+      expect(toolCall.id).toBeDefined();
+      expect(toolCall.function.name).toBe('greet');
+    });
+
+    it('should strip index from multiple tool_calls', () => {
+      const req = {
+        model: 'devstral',
+        messages: [
+          {
+            role: 'assistant',
+            content: null,
+            tool_calls: [
+              {index: 0, id: 'call_1', type: 'function', function: {name: 'a', arguments: '{}'}},
+              {index: 1, id: 'call_2', type: 'function', function: {name: 'b', arguments: '{}'}},
+              {index: 2, id: 'call_3', type: 'function', function: {name: 'c', arguments: '{}'}},
+            ],
+          },
+        ],
+      };
+
+      const result = normalizeOpenAIToolIds(req);
+      
+      result.messages[0].tool_calls.forEach((tc: {index?: number}) => {
+        expect(tc.index).toBeUndefined();
+      });
+    });
+  });
+
+  describe('JSON sanitization in arguments', () => {
+    it('should keep valid JSON arguments unchanged', () => {
+      const req = {
+        model: 'devstral',
+        messages: [{
+          role: 'assistant',
+          content: null,
+          tool_calls: [{
+            id: 'call_123',
+            type: 'function',
+            function: {name: 'test', arguments: '{"key": "value", "num": 42}'},
+          }],
+        }],
+      };
+
+      const result = normalizeOpenAIToolIds(req);
+      expect(result.messages[0].tool_calls[0].function.arguments).toBe('{"key": "value", "num": 42}');
+    });
+
+    it('should replace truncated JSON with empty object', () => {
+      const req = {
+        model: 'devstral',
+        messages: [{
+          role: 'assistant',
+          content: null,
+          tool_calls: [{
+            id: 'call_123',
+            type: 'function',
+            function: {name: 'test', arguments: '{"key": "value"'},  // Missing closing brace
+          }],
+        }],
+      };
+
+      const result = normalizeOpenAIToolIds(req);
+      expect(result.messages[0].tool_calls[0].function.arguments).toBe('{}');
+    });
+
+    it('should replace malformed JSON with empty object', () => {
+      const req = {
+        model: 'devstral',
+        messages: [{
+          role: 'assistant',
+          content: null,
+          tool_calls: [{
+            id: 'call_123',
+            type: 'function',
+            function: {name: 'test', arguments: 'not valid json at all'},
+          }],
+        }],
+      };
+
+      const result = normalizeOpenAIToolIds(req);
+      expect(result.messages[0].tool_calls[0].function.arguments).toBe('{}');
+    });
+
+    it('should handle null/undefined arguments', () => {
+      const req = {
+        model: 'devstral',
+        messages: [{
+          role: 'assistant',
+          content: null,
+          tool_calls: [{
+            id: 'call_123',
+            type: 'function',
+            function: {name: 'test', arguments: null},
+          }],
+        }],
+      };
+
+      const result = normalizeOpenAIToolIds(req);
+      expect(result.messages[0].tool_calls[0].function.arguments).toBe('{}');
+    });
+  });
+});
+
+
+describe('filterEmptyAssistantMessages', () => {
+
+  it('should keep assistant messages with content', () => {
+    const req = {
+      model: 'devstral',
+      messages: [
+        {role: 'user', content: 'Hello'},
+        {role: 'assistant', content: 'Hi there!'},
+      ],
+    };
+
+    const result = filterEmptyAssistantMessages(req);
+    expect(result.messages).toHaveLength(2);
+  });
+
+  it('should keep assistant messages with tool_calls but no content', () => {
+    const req = {
+      model: 'devstral',
+      messages: [
+        {role: 'user', content: 'Search for X'},
+        {
+          role: 'assistant',
+          content: null,
+          tool_calls: [{id: 'call_1', type: 'function', function: {name: 'search', arguments: '{}'}}],
+        },
+      ],
+    };
+
+    const result = filterEmptyAssistantMessages(req);
+    expect(result.messages).toHaveLength(2);
+  });
+
+  it('should remove assistant messages with empty content and no tool_calls', () => {
+    const req = {
+      model: 'devstral',
+      messages: [
+        {role: 'user', content: 'Hello'},
+        {role: 'assistant', content: ''},  // Empty content, no tool_calls
+        {role: 'user', content: 'How are you?'},
+      ],
+    };
+
+    const result = filterEmptyAssistantMessages(req);
+    expect(result.messages).toHaveLength(2);
+    expect(result.messages[0].content).toBe('Hello');
+    expect(result.messages[1].content).toBe('How are you?');
+  });
+
+  it('should remove assistant messages with null content and no tool_calls', () => {
+    const req = {
+      model: 'devstral',
+      messages: [
+        {role: 'user', content: 'Hello'},
+        {role: 'assistant', content: null, tool_calls: null},
+      ],
+    };
+
+    const result = filterEmptyAssistantMessages(req);
+    expect(result.messages).toHaveLength(1);
+  });
+
+  it('should remove assistant messages with empty tool_calls array', () => {
+    const req = {
+      model: 'devstral',
+      messages: [
+        {role: 'user', content: 'Hello'},
+        {role: 'assistant', content: '', tool_calls: []},
+      ],
+    };
+
+    const result = filterEmptyAssistantMessages(req);
+    expect(result.messages).toHaveLength(1);
+  });
+
+  it('should preserve other message roles', () => {
+    const req = {
+      model: 'devstral',
+      messages: [
+        {role: 'system', content: 'You are helpful'},
+        {role: 'user', content: 'Hello'},
+        {role: 'assistant', content: ''},  // Should be removed
+        {role: 'tool', tool_call_id: 'call_1', content: 'result'},
+      ],
+    };
+
+    const result = filterEmptyAssistantMessages(req);
+    expect(result.messages).toHaveLength(3);
+    expect(result.messages.map((m: {role: string}) => m.role)).toEqual(['system', 'user', 'tool']);
   });
 });

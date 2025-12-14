@@ -49,15 +49,16 @@ async function anthropicRoutes(app: FastifyInstance): Promise<void> {
     const body = req.body as AnthropicRequest;
     const useVision = hasAnthropicImages(body) && !!app.config.visionBackend;
     const backend = getBackend(useVision);
-    const auth = getBackendAuth(backend, req.headers.authorization);
+    const baseUrl = backend.url as string;
+    const auth = getBackendAuth(backend, req.headers.authorization) ?? '';
     const model = backend.model || body.model;
 
     // Pipeline: Anthropic → OpenAI → vLLM
     const payload = {...toOpenAI(body, useVision), model};
 
     try {
-      if (body.stream) return streamAnthropic(reply, backend.url, payload, auth, model);
-      const res = await callBackend<OpenAIResponse>(`${backend.url}/v1/chat/completions`, payload, auth);
+      if (body.stream) return streamAnthropic(reply, baseUrl, payload, auth, model);
+      const res = await callBackend<OpenAIResponse>(`${baseUrl}/v1/chat/completions`, payload, auth);
       return toAnthropic(res, model);
     } catch (e) {
       req.log.error({err: e}, 'Request failed');

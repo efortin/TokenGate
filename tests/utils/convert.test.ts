@@ -1,5 +1,5 @@
 import {describe, it, expect} from 'vitest';
-import {anthropicToOpenAI, openAIToAnthropic, injectWebSearchPrompt, sanitizeToolName, normalizeOpenAIToolIds, filterEmptyAssistantMessages} from '../../src/utils/convert.js';
+import {anthropicToOpenAI, openAIToAnthropic, injectWebSearchPrompt, sanitizeToolName, normalizeOpenAIToolIds, filterEmptyAssistantMessages, convertOpenAIStreamToAnthropic} from '../../src/utils/convert.js';
 import type {AnthropicRequest, OpenAIResponse} from '../../src/types/index.js';
 
 describe('anthropicToOpenAI', () => {
@@ -799,5 +799,81 @@ describe('filterEmptyAssistantMessages', () => {
     const result = filterEmptyAssistantMessages(req);
     expect(result.messages).toHaveLength(3);
     expect(result.messages.map((m: {role: string}) => m.role)).toEqual(['system', 'user', 'tool']);
+  });
+});
+
+describe('convertOpenAIStreamToAnthropic - streaming', () => {
+  async function* mockStream(chunks: string[]): AsyncGenerator<string> {
+    for (const chunk of chunks) yield chunk;
+  }
+
+  async function collectStream(gen: AsyncGenerator<string>): Promise<string[]> {
+    const results: string[] = [];
+    for await (const chunk of gen) results.push(chunk);
+    return results;
+  }
+
+  it('should handle tool_calls in stream', async () => {
+    const chunks = [
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"search","arguments":""}}]}}]}\n\n',
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"q\\""}}]}}]}\n\n',
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":":\\"test\\"}"}}]}}]}\n\n',
+      'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}\n\n',
+      'data: [DONE]\n\n',
+    ];
+
+    const results = await collectStream(convertOpenAIStreamToAnthropic(mockStream(chunks), 'test-model', 10));
+    const joined = results.join('');
+
+    expect(joined).toContain('content_block_start');
+    expect(joined).toContain('tool_use');
+    expect(joined).toContain('input_json_delta');
+    expect(joined).toContain('content_block_stop');
+  });
+
+  it('should handle finish_reason length with usage chunk', async () => {
+    const chunks = [
+      'data: {"choices":[{"delta":{"content":"Hello"}}]}\n\n',
+      'data: {"choices":[{"delta":{},"finish_reason":"length"}]}\n\n',
+      'data: {"usage":{"prompt_tokens":10,"completion_tokens":5}}\n\n',
+      'data: [DONE]\n\n',
+    ];
+
+    const results = await collectStream(convertOpenAIStreamToAnthropic(mockStream(chunks), 'test-model', 10));
+    const joined = results.join('');
+
+    expect(joined).toContain('message_delta');
+    expect(joined).toContain('message_stop');
+  });
+
+  it('should handle finish_reason tool_calls', async () => {
+    const chunks = [
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"test","arguments":"{}"}}]}}]}\n\n',
+      'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}\n\n',
+      'data: [DONE]\n\n',
+    ];
+
+    const results = await collectStream(convertOpenAIStreamToAnthropic(mockStream(chunks), 'test-model', 10));
+    const joined = results.join('');
+
+    expect(joined).toContain('tool_use');
+  });
+
+  it('should handle multiple tool_calls with arguments accumulation', async () => {
+    const chunks = [
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"fn1","arguments":""}}]}}]}\n\n',
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":1,"id":"call_2","function":{"name":"fn2","arguments":""}}]}}]}\n\n',
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"a\\":"}}]}}]}\n\n',
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"1}"}}]}}]}\n\n',
+      'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}\n\n',
+      'data: [DONE]\n\n',
+    ];
+
+    const results = await collectStream(convertOpenAIStreamToAnthropic(mockStream(chunks), 'test-model', 10));
+    const joined = results.join('');
+
+    expect(joined).toContain('fn1');
+    expect(joined).toContain('fn2');
+    expect(joined).toContain('input_json_delta');
   });
 });

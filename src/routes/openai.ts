@@ -46,15 +46,16 @@ async function openaiRoutes(app: FastifyInstance): Promise<void> {
     const body = req.body as OpenAIRequest;
     const useVision = hasOpenAIImages(body) && !!app.config.visionBackend;
     const backend = getBackend(useVision);
-    const auth = getBackendAuth(backend, req.headers.authorization);
+    const baseUrl = backend.url as string;
+    const auth = getBackendAuth(backend, req.headers.authorization) ?? '';
 
     // Pipeline: transform → set model → send
     const transformed = transform(useVision)(body);
     const payload = {...transformed, model: backend.model || body.model};
 
     try {
-      if (body.stream) return stream(reply, backend.url, payload, auth);
-      return await callBackend<OpenAIResponse>(`${backend.url}/v1/chat/completions`, payload, auth);
+      if (body.stream) return stream(reply, baseUrl, payload, auth);
+      return await callBackend<OpenAIResponse>(`${baseUrl}/v1/chat/completions`, payload, auth);
     } catch (e) {
       req.log.error({err: e}, 'Request failed');
       reply.code(StatusCodes.INTERNAL_SERVER_ERROR);
@@ -71,14 +72,15 @@ const handler = (app: FastifyInstance, useTransform: boolean) =>
   async (req: FastifyRequest, reply: FastifyReply) => {
     const body = req.body as OpenAIRequest;
     const backend = app.config.defaultBackend;
-    const auth = getBackendAuth(backend, req.headers.authorization);
+    const baseUrl = backend.url as string;
+    const auth = getBackendAuth(backend, req.headers.authorization) ?? '';
     const payload = useTransform 
       ? {...transform(false)(body), model: backend.model || body.model}
       : {...body, model: backend.model || (body as {model?: string}).model};
 
     try {
-      if ((body as {stream?: boolean}).stream) return stream(reply, backend.url, payload, auth);
-      return await callBackend(`${backend.url}/v1/completions`, payload, auth);
+      if ((body as {stream?: boolean}).stream) return stream(reply, baseUrl, payload, auth);
+      return await callBackend(`${baseUrl}/v1/completions`, payload, auth);
     } catch (e) {
       req.log.error({err: e}, 'Request failed');
       reply.code(StatusCodes.INTERNAL_SERVER_ERROR);

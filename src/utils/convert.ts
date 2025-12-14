@@ -148,6 +148,8 @@ export function anthropicToOpenAI(req: AnthropicRequest, options: ConvertOptions
     messages,
     max_tokens: req.max_tokens,
     stream: req.stream,
+    // Request usage stats in streaming responses
+    ...(req.stream && {stream_options: {include_usage: true}}),
     ...(openaiTools && {tools: openaiTools}),
   };
 }
@@ -406,14 +408,24 @@ export async function* convertOpenAIStreamToAnthropic(
         continue;
       }
 
-      // Track usage if provided
+      // Track usage if provided (may come in final chunk with empty choices)
       if (chunk.usage) {
         inputTokens = chunk.usage.prompt_tokens || inputTokens;
         outputTokens = chunk.usage.completion_tokens || outputTokens;
       }
 
       const choice = chunk.choices?.[0];
-      if (!choice) continue;
+      if (!choice) {
+        // Final usage-only chunk - send message_delta with input_tokens
+        if (chunk.usage && inputTokens > 0) {
+          yield `event: message_delta\ndata: ${JSON.stringify({
+            type: 'message_delta',
+            delta: {},
+            usage: {input_tokens: inputTokens, output_tokens: outputTokens},
+          })}\n\n`;
+        }
+        continue;
+      }
 
       const delta = choice.delta;
 

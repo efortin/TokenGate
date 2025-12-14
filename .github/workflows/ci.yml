@@ -9,7 +9,7 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
 
     steps:
       - uses: actions/checkout@v4
@@ -47,7 +47,7 @@ jobs:
           path: coverage/
 
   build:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     needs: test
 
     steps:
@@ -76,7 +76,7 @@ jobs:
           path: dist/
 
   docker:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     needs: build
     permissions:
       contents: read

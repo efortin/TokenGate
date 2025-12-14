@@ -1,7 +1,7 @@
 import type {FastifyInstance, FastifyReply} from 'fastify';
 import fp from 'fastify-plugin';
 
-import type {AnthropicRequest, AnthropicResponse, OpenAIResponse} from '../types/index.js';
+import type {AnthropicRequest, OpenAIResponse} from '../types/index.js';
 import {callBackend, streamBackend} from '../services/backend.js';
 import {
   SSE_HEADERS,

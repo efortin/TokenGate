@@ -1,6 +1,6 @@
 import {describe, it, expect} from 'vitest';
-import {anthropicToOpenAI, openAIToAnthropic, injectWebSearchPrompt, normalizeOpenAIToolIds, parseMistralToolCalls, isMistralModel} from '../../src/utils/convert.js';
-import type {AnthropicRequest, OpenAIResponse, OpenAIRequest} from '../../src/types/index.js';
+import {anthropicToOpenAI, openAIToAnthropic, injectWebSearchPrompt, parseMistralToolCalls, isMistralModel} from '../../src/utils/convert.js';
+import type {AnthropicRequest, OpenAIResponse} from '../../src/types/index.js';
 
 describe('anthropicToOpenAI', () => {
   it('should convert simple text message', () => {

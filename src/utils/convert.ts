@@ -72,20 +72,20 @@ interface OpenAIStreamChunk {
   object: string;
   created: number;
   model: string;
-  choices: Array<{
+  choices: {
     index: number;
     delta: {
       role?: string;
       content?: string;
-      tool_calls?: Array<{
+      tool_calls?: {
         index: number;
         id?: string;
         type?: string;
         function?: {name?: string; arguments?: string};
-      }>;
+      }[];
     };
     finish_reason: string | null;
-  }>;
+  }[];
   usage?: {
     prompt_tokens: number;
     completion_tokens: number;
@@ -181,7 +181,7 @@ export function anthropicToOpenAI(req: AnthropicRequest, options: ConvertOptions
   }
 
   // Convert Anthropic tools to OpenAI format
-  const tools = req.tools as Array<{name: string; description: string; input_schema: unknown}> | undefined;
+  const tools = req.tools as {name: string; description: string; input_schema: unknown}[] | undefined;
   const openaiTools = tools?.map((tool) => ({
     type: 'function' as const,
     function: {
@@ -229,7 +229,7 @@ export function normalizeOpenAIToolIds(req: OpenAIRequest): OpenAIRequest {
 
   // First pass: collect tool_calls IDs from assistant messages
   for (const msg of req.messages) {
-    const toolCalls = (msg as {tool_calls?: Array<{id: string}>}).tool_calls;
+    const toolCalls = (msg as {tool_calls?: {id: string}[]}).tool_calls;
     if (msg.role === 'assistant' && toolCalls) {
       for (const call of toolCalls) {
         if (call.id && !idMap.has(call.id)) {
@@ -242,7 +242,7 @@ export function normalizeOpenAIToolIds(req: OpenAIRequest): OpenAIRequest {
   // Second pass: rewrite all IDs
   const normalizedMessages = req.messages.map((msg) => {
     // Rewrite tool_calls in assistant messages
-    const toolCalls = (msg as {tool_calls?: Array<{id: string; type: string; function: unknown}>}).tool_calls;
+    const toolCalls = (msg as {tool_calls?: {id: string; type: string; function: unknown}[]}).tool_calls;
     if (msg.role === 'assistant' && toolCalls) {
       const newToolCalls = toolCalls.map((call) => ({
         ...call,
@@ -302,7 +302,7 @@ export function openAIToAnthropic(res: OpenAIResponse, model: string): Anthropic
   }
 
   // Convert tool_calls to tool_use blocks
-  const toolCalls = (choice?.message as {tool_calls?: Array<{id: string; function: {name: string; arguments: string}}>})?.tool_calls;
+  const toolCalls = (choice?.message as {tool_calls?: {id: string; function: {name: string; arguments: string}}[]})?.tool_calls;
   if (toolCalls && toolCalls.length > 0) {
     for (const call of toolCalls) {
       let input: Record<string, unknown> = {};
@@ -430,14 +430,14 @@ export function normalizeToolCallIds(req: AnthropicRequest): AnthropicRequest {
 export async function* convertOpenAIStreamToAnthropic(
   stream: AsyncGenerator<string>,
   model: string,
-  estimatedInputTokens: number = 0,
+  estimatedInputTokens = 0,
 ): AsyncGenerator<string> {
   const messageId = `msg_${Date.now()}`;
   let inputTokens = estimatedInputTokens;
   let outputTokens = 0;
   let contentIndex = 0;
   let isFirstContent = true;
-  const toolCalls: Map<number, {id: string; name: string; arguments: string}> = new Map();
+  const toolCalls = new Map<number, {id: string; name: string; arguments: string}>();
   
   // Buffer for Mistral [TOOL_CALLS] detection
   let textBuffer = '';

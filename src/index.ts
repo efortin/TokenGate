@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import pino from 'pino';
 
 import {buildApp} from './app.js';

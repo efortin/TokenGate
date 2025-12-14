@@ -40,6 +40,72 @@ describe('OpenAI Routes', () => {
     vi.clearAllMocks();
   });
 
+  describe('POST /v1/completions (legacy)', () => {
+    it('should handle non-streaming completions request', async () => {
+      const mockResponse = {
+        id: 'cmpl-123',
+        object: 'text_completion',
+        created: Date.now(),
+        model: 'test-model',
+        choices: [{text: 'Hello world', index: 0, finish_reason: 'stop'}],
+      };
+      vi.mocked(callBackend).mockResolvedValue(mockResponse);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/completions',
+        payload: {
+          model: 'gpt-3.5-turbo-instruct',
+          prompt: 'Say hello',
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual(mockResponse);
+      expect(callBackend).toHaveBeenCalledWith(
+        'http://localhost:8000/v1/completions',
+        expect.objectContaining({model: 'test-model'}),
+        'test-api-key',
+      );
+    });
+
+    it('should handle streaming completions request', async () => {
+      const chunks = ['data: {"choices":[{"text":"Hi"}]}\n\n', 'data: [DONE]\n\n'];
+      vi.mocked(streamBackend).mockImplementation(async function* () {
+        for (const chunk of chunks) yield chunk;
+      });
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/completions',
+        payload: {
+          model: 'gpt-3.5-turbo-instruct',
+          prompt: 'Say hello',
+          stream: true,
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(streamBackend).toHaveBeenCalled();
+    });
+
+    it('should handle completions backend error', async () => {
+      vi.mocked(callBackend).mockRejectedValue(new Error('Backend error'));
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/completions',
+        payload: {
+          model: 'gpt-3.5-turbo-instruct',
+          prompt: 'Say hello',
+        },
+      });
+
+      expect(response.statusCode).toBe(500);
+      expect(response.json().error.type).toBe('api_error');
+    });
+  });
+
   describe('POST /v1/chat/completions', () => {
     it('should handle non-streaming request', async () => {
       const mockResponse = {
@@ -126,6 +192,25 @@ describe('OpenAI Routes', () => {
       });
 
       expect(response.statusCode).toBe(200);
+    });
+
+    it('should handle empty stream response', async () => {
+      vi.mocked(streamBackend).mockImplementation(async function* () {
+        // Empty generator - no yields
+      });
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/chat/completions',
+        payload: {
+          model: 'gpt-4',
+          messages: [{role: 'user', content: 'Hello'}],
+          stream: true,
+        },
+      });
+
+      expect(response.statusCode).toBe(500);
+      expect(response.json().error.message).toContain('Empty response');
     });
   });
 });

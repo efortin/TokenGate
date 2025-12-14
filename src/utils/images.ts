@@ -45,6 +45,16 @@ export function stripAnthropicImages(body: AnthropicRequest): AnthropicRequest {
   };
 }
 
+/** Removes tool_choice when tools is empty or missing (vLLM validation fix). */
+export function sanitizeToolChoice(body: OpenAIRequest): OpenAIRequest {
+  if (body.tool_choice && (!body.tools || (body.tools as unknown[]).length === 0)) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const {tool_choice, ...rest} = body;
+    return rest as OpenAIRequest;
+  }
+  return body;
+}
+
 /** Strips image_url blocks from OpenAI messages for non-vision backends. */
 export function stripOpenAIImages(body: OpenAIRequest): OpenAIRequest {
   return {

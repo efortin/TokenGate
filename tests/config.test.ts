@@ -62,4 +62,36 @@ describe('loadConfig', () => {
     expect(config.port).toBe(9999);
     expect(typeof config.port).toBe('number');
   });
+
+  it('should configure vision backend when VISION_URL is set', () => {
+    process.env.VISION_URL = 'http://vision:8000';
+    process.env.VISION_API_KEY = 'vision-key';
+    process.env.VISION_MODEL = 'vision-model';
+
+    const config = loadConfig();
+
+    expect(config.visionBackend).toBeDefined();
+    expect(config.visionBackend?.name).toBe('vision');
+    expect(config.visionBackend?.url).toBe('http://vision:8000');
+    expect(config.visionBackend?.apiKey).toBe('vision-key');
+    expect(config.visionBackend?.model).toBe('vision-model');
+  });
+
+  it('should use VLLM_API_KEY for vision when VISION_API_KEY not set', () => {
+    process.env.VISION_URL = 'http://vision:8000';
+    process.env.VLLM_API_KEY = 'vllm-key';
+    delete process.env.VISION_API_KEY;
+
+    const config = loadConfig();
+
+    expect(config.visionBackend?.apiKey).toBe('vllm-key');
+  });
+
+  it('should not configure vision backend when VISION_URL is not set', () => {
+    delete process.env.VISION_URL;
+
+    const config = loadConfig();
+
+    expect(config.visionBackend).toBeUndefined();
+  });
 });

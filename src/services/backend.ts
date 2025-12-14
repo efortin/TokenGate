@@ -44,15 +44,29 @@ export async function* streamBackend(
     headers['Authorization'] = auth.startsWith('Bearer ') ? auth : `Bearer ${auth}`;
   }
 
+  const bodyStr = JSON.stringify(body);
   const response = await fetch(url, {
     method: 'POST',
     headers,
-    body: JSON.stringify(body),
+    body: bodyStr,
   });
 
   if (!response.ok) {
     const error = await response.text();
-    throw new Error(`Backend error: ${response.status} ${error}`);
+    // Log detailed error info for debugging
+    const reqBody = body as {messages?: unknown[]; model?: string; tools?: unknown[]};
+    const msgCount = reqBody.messages?.length ?? 0;
+    const lastMsg = reqBody.messages?.[msgCount - 1] as {role?: string; tool_calls?: unknown[]} | undefined;
+    console.error(`[streamBackend] Backend error ${response.status}:`, {
+      url,
+      model: reqBody.model,
+      messageCount: msgCount,
+      lastMessageRole: lastMsg?.role,
+      hasToolCalls: !!lastMsg?.tool_calls,
+      toolCount: reqBody.tools?.length,
+      errorPreview: error.slice(0, 1000),
+    });
+    throw new Error(`Backend error: ${response.status} ${error.slice(0, 500)}`);
   }
 
   if (!response.body) {

@@ -1,5 +1,5 @@
 import {describe, it, expect} from 'vitest';
-import {anthropicToOpenAI, openAIToAnthropic, injectWebSearchPrompt, normalizeOpenAIToolIds} from '../../src/utils/convert.js';
+import {anthropicToOpenAI, openAIToAnthropic, injectWebSearchPrompt, normalizeOpenAIToolIds, parseMistralToolCalls, isMistralModel} from '../../src/utils/convert.js';
 import type {AnthropicRequest, OpenAIResponse, OpenAIRequest} from '../../src/types/index.js';
 
 describe('anthropicToOpenAI', () => {
@@ -383,5 +383,91 @@ describe('injectWebSearchPrompt', () => {
 
     expect(result.system).toContain('Valid');
     expect(result.system).toContain('Web Search Guidelines');
+  });
+});
+
+describe('isMistralModel', () => {
+  it('should detect mistral models', () => {
+    expect(isMistralModel('mistral-7b')).toBe(true);
+    expect(isMistralModel('Mistral-Large')).toBe(true);
+    expect(isMistralModel('mistralai/Mistral-7B')).toBe(true);
+  });
+
+  it('should detect devstral models', () => {
+    expect(isMistralModel('devstral-small-2-24b')).toBe(true);
+    expect(isMistralModel('Devstral-Small-2-24B-Instruct')).toBe(true);
+  });
+
+  it('should detect codestral models', () => {
+    expect(isMistralModel('codestral-latest')).toBe(true);
+    expect(isMistralModel('Codestral-22B')).toBe(true);
+  });
+
+  it('should not detect non-mistral models', () => {
+    expect(isMistralModel('claude-3')).toBe(false);
+    expect(isMistralModel('gpt-4')).toBe(false);
+    expect(isMistralModel('llama-3')).toBe(false);
+  });
+});
+
+describe('parseMistralToolCalls', () => {
+  it('should return null for text without [TOOL_CALLS]', () => {
+    expect(parseMistralToolCalls('Hello world')).toBeNull();
+    expect(parseMistralToolCalls('Some text without tool calls')).toBeNull();
+  });
+
+  it('should parse single tool call', () => {
+    const text = '[TOOL_CALLS]Write{"file_path": "/test.txt", "content": "hello"}';
+    const result = parseMistralToolCalls(text);
+    
+    expect(result).not.toBeNull();
+    expect(result).toHaveLength(1);
+    expect(result![0].name).toBe('Write');
+    expect(result![0].arguments).toEqual({file_path: '/test.txt', content: 'hello'});
+  });
+
+  it('should parse tool call with complex JSON', () => {
+    const text = '[TOOL_CALLS]Read{"file_path": "/Users/test/file.md", "offset": 0, "limit": 100}';
+    const result = parseMistralToolCalls(text);
+    
+    expect(result).not.toBeNull();
+    expect(result).toHaveLength(1);
+    expect(result![0].name).toBe('Read');
+    expect(result![0].arguments).toEqual({file_path: '/Users/test/file.md', offset: 0, limit: 100});
+  });
+
+  it('should parse multiple tool calls', () => {
+    const text = '[TOOL_CALLS]Read{"path": "/a.txt"}[TOOL_CALLS]Write{"path": "/b.txt", "content": "test"}';
+    const result = parseMistralToolCalls(text);
+    
+    expect(result).not.toBeNull();
+    expect(result).toHaveLength(2);
+    expect(result![0].name).toBe('Read');
+    expect(result![1].name).toBe('Write');
+  });
+
+  it('should handle text before [TOOL_CALLS]', () => {
+    const text = 'I will now write the file. [TOOL_CALLS]Write{"file_path": "/test.txt", "content": "data"}';
+    const result = parseMistralToolCalls(text);
+    
+    expect(result).not.toBeNull();
+    expect(result).toHaveLength(1);
+    expect(result![0].name).toBe('Write');
+  });
+
+  it('should skip malformed JSON', () => {
+    const text = '[TOOL_CALLS]Bad{not valid json}';
+    const result = parseMistralToolCalls(text);
+    
+    expect(result).toBeNull();
+  });
+
+  it('should parse valid calls and skip invalid ones', () => {
+    const text = '[TOOL_CALLS]Good{"key": "value"}[TOOL_CALLS]Bad{invalid}';
+    const result = parseMistralToolCalls(text);
+    
+    expect(result).not.toBeNull();
+    expect(result).toHaveLength(1);
+    expect(result![0].name).toBe('Good');
   });
 });

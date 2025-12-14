@@ -2,6 +2,70 @@ import type {AnthropicRequest, AnthropicResponse, OpenAIRequest, OpenAIResponse}
 import {VISION_SYSTEM_PROMPT} from '../prompts/vision.js';
 import {WEB_SEARCH_SYSTEM_PROMPT} from '../prompts/web-search.js';
 
+/**
+ * Parsed Mistral tool call from [TOOL_CALLS] format.
+ */
+interface ParsedMistralToolCall {
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
+/**
+ * Parses Mistral's native [TOOL_CALLS] format from text content.
+ * Format: [TOOL_CALLS]ToolName{"param": "value", ...}
+ * Can have multiple tool calls: [TOOL_CALLS]Tool1{...}[TOOL_CALLS]Tool2{...}
+ * @returns Array of parsed tool calls, or null if no [TOOL_CALLS] found
+ */
+export function parseMistralToolCalls(text: string): ParsedMistralToolCall[] | null {
+  if (!text.includes('[TOOL_CALLS]')) {
+    return null;
+  }
+
+  const toolCalls: ParsedMistralToolCall[] = [];
+  // Match [TOOL_CALLS]ToolName followed by JSON object
+  // The regex captures: tool name and the JSON object
+  const regex = /\[TOOL_CALLS\](\w+)(\{[\s\S]*?\})(?=\[TOOL_CALLS\]|$)/g;
+  
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    const [, toolName, jsonStr] = match;
+    try {
+      const args = JSON.parse(jsonStr);
+      toolCalls.push({name: toolName, arguments: args});
+    } catch {
+      // Try to extract partial JSON - might be truncated
+      // Skip malformed tool calls
+      continue;
+    }
+  }
+
+  // Also try simpler format: [TOOL_CALLS]ToolName{...} without lookahead
+  if (toolCalls.length === 0) {
+    const simpleRegex = /\[TOOL_CALLS\](\w+)(\{[^}]+\})/g;
+    while ((match = simpleRegex.exec(text)) !== null) {
+      const [, toolName, jsonStr] = match;
+      try {
+        const args = JSON.parse(jsonStr);
+        toolCalls.push({name: toolName, arguments: args});
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  return toolCalls.length > 0 ? toolCalls : null;
+}
+
+/**
+ * Checks if model name indicates a Mistral model.
+ */
+export function isMistralModel(model: string): boolean {
+  const lowerModel = model.toLowerCase();
+  return lowerModel.includes('mistral') || 
+         lowerModel.includes('devstral') || 
+         lowerModel.includes('codestral');
+}
+
 /** OpenAI stream chunk structure */
 interface OpenAIStreamChunk {
   id: string;
@@ -374,6 +438,11 @@ export async function* convertOpenAIStreamToAnthropic(
   let contentIndex = 0;
   let isFirstContent = true;
   const toolCalls: Map<number, {id: string; name: string; arguments: string}> = new Map();
+  
+  // Buffer for Mistral [TOOL_CALLS] detection
+  let textBuffer = '';
+  let mistralToolCallsDetected = false;
+  const checkMistral = isMistralModel(model);
 
   // Send message_start event with estimated input tokens
   yield `event: message_start\ndata: ${JSON.stringify({
@@ -421,22 +490,56 @@ export async function* convertOpenAIStreamToAnthropic(
 
       // Handle text content
       if (delta.content) {
-        if (isFirstContent) {
-          // Send content_block_start
-          yield `event: content_block_start\ndata: ${JSON.stringify({
-            type: 'content_block_start',
+        // For Mistral models, buffer content to detect [TOOL_CALLS]
+        if (checkMistral) {
+          textBuffer += delta.content;
+          
+          // Check if we're starting to see [TOOL_CALLS]
+          if (textBuffer.includes('[TOOL_CALLS]')) {
+            mistralToolCallsDetected = true;
+            // Don't emit text - we'll process tool calls at the end
+            outputTokens++;
+            continue;
+          }
+          
+          // If we haven't seen [TOOL_CALLS] yet and buffer is getting long,
+          // emit the safe portion (keeping last 20 chars for partial detection)
+          if (!mistralToolCallsDetected && textBuffer.length > 20) {
+            const safeText = textBuffer.slice(0, -20);
+            textBuffer = textBuffer.slice(-20);
+            
+            if (safeText) {
+              if (isFirstContent) {
+                yield `event: content_block_start\ndata: ${JSON.stringify({
+                  type: 'content_block_start',
+                  index: contentIndex,
+                  content_block: {type: 'text', text: ''},
+                })}\n\n`;
+                isFirstContent = false;
+              }
+              yield `event: content_block_delta\ndata: ${JSON.stringify({
+                type: 'content_block_delta',
+                index: contentIndex,
+                delta: {type: 'text_delta', text: safeText},
+              })}\n\n`;
+            }
+          }
+        } else {
+          // Non-Mistral: emit directly
+          if (isFirstContent) {
+            yield `event: content_block_start\ndata: ${JSON.stringify({
+              type: 'content_block_start',
+              index: contentIndex,
+              content_block: {type: 'text', text: ''},
+            })}\n\n`;
+            isFirstContent = false;
+          }
+          yield `event: content_block_delta\ndata: ${JSON.stringify({
+            type: 'content_block_delta',
             index: contentIndex,
-            content_block: {type: 'text', text: ''},
+            delta: {type: 'text_delta', text: delta.content},
           })}\n\n`;
-          isFirstContent = false;
         }
-
-        // Send content_block_delta
-        yield `event: content_block_delta\ndata: ${JSON.stringify({
-          type: 'content_block_delta',
-          index: contentIndex,
-          delta: {type: 'text_delta', text: delta.content},
-        })}\n\n`;
         outputTokens++;
       }
 
@@ -486,6 +589,67 @@ export async function* convertOpenAIStreamToAnthropic(
 
       // Handle finish
       if (choice.finish_reason) {
+        let stopReason = 'end_turn';
+        
+        // For Mistral: check if we have buffered [TOOL_CALLS] to process
+        if (checkMistral && mistralToolCallsDetected && textBuffer) {
+          const parsedTools = parseMistralToolCalls(textBuffer);
+          if (parsedTools && parsedTools.length > 0) {
+            // Close any open text block first
+            if (!isFirstContent) {
+              yield `event: content_block_stop\ndata: ${JSON.stringify({
+                type: 'content_block_stop',
+                index: contentIndex,
+              })}\n\n`;
+              contentIndex++;
+            }
+            
+            // Emit tool_use blocks for each parsed tool call
+            for (let i = 0; i < parsedTools.length; i++) {
+              const tool = parsedTools[i];
+              const toolId = generateMistralToolId(i);
+              
+              // content_block_start for tool_use
+              yield `event: content_block_start\ndata: ${JSON.stringify({
+                type: 'content_block_start',
+                index: contentIndex + i,
+                content_block: {
+                  type: 'tool_use',
+                  id: toolId,
+                  name: tool.name,
+                  input: tool.arguments,
+                },
+              })}\n\n`;
+              
+              // content_block_stop for tool_use
+              yield `event: content_block_stop\ndata: ${JSON.stringify({
+                type: 'content_block_stop',
+                index: contentIndex + i,
+              })}\n\n`;
+            }
+            
+            stopReason = 'tool_use';
+            isFirstContent = true; // Already closed
+          }
+        } else if (checkMistral && textBuffer && !mistralToolCallsDetected) {
+          // Emit any remaining buffered text
+          if (textBuffer) {
+            if (isFirstContent) {
+              yield `event: content_block_start\ndata: ${JSON.stringify({
+                type: 'content_block_start',
+                index: contentIndex,
+                content_block: {type: 'text', text: ''},
+              })}\n\n`;
+              isFirstContent = false;
+            }
+            yield `event: content_block_delta\ndata: ${JSON.stringify({
+              type: 'content_block_delta',
+              index: contentIndex,
+              delta: {type: 'text_delta', text: textBuffer},
+            })}\n\n`;
+          }
+        }
+        
         // Close any open content blocks
         if (!isFirstContent) {
           yield `event: content_block_stop\ndata: ${JSON.stringify({
@@ -494,12 +658,13 @@ export async function* convertOpenAIStreamToAnthropic(
           })}\n\n`;
         }
 
-        // Map finish reason
-        let stopReason = 'end_turn';
-        if (choice.finish_reason === 'tool_calls') {
-          stopReason = 'tool_use';
-        } else if (choice.finish_reason === 'length') {
-          stopReason = 'max_tokens';
+        // Map finish reason (if not already set by tool parsing)
+        if (stopReason === 'end_turn') {
+          if (choice.finish_reason === 'tool_calls') {
+            stopReason = 'tool_use';
+          } else if (choice.finish_reason === 'length') {
+            stopReason = 'max_tokens';
+          }
         }
 
         // Send message_delta with usage

@@ -2,9 +2,30 @@ name: Integration Tests
 
 on:
   workflow_dispatch:
+
 jobs:
+  check-config:
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - name: Display configuration
+        run: |
+          echo "=== Configuration Check ==="
+          echo "TOKTOKEN_KEY: Set ${TOKTOKEN_KEY:+'✓':-'✗'}"
+          echo "VLLM_API_KEY: Set ${VLLM_API_KEY:+'✓':-'✗'}"
+          echo "VLLM_ENDPOINT: Set ${VLLM_ENDPOINT:+'✓':-'✗'}"
+          echo ""
+          echo "=== Secrets ==="
+          echo "Backend URL: ${{ secrets.VLLM_ENDPOINT }}"
+          echo "Test file: tests/integration/backend.integration.ts"
+          echo ""
+          echo "=== Environment ==="
+          echo "Node version: $(node --version || echo 'Not installed')"
+          echo "NPM version: $(npm --version || echo 'Not installed')"
+          echo "TSX available: $(which tsx || echo 'Not found')"
+
   integration-test:
     runs-on: [self-hosted, linux, x64]
+    needs: check-config
     
     steps:
       - name: Checkout code

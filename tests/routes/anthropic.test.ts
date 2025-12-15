@@ -42,20 +42,17 @@ describe('Anthropic Routes', () => {
 
   describe('POST /v1/messages', () => {
     it('should handle non-streaming request', async () => {
-      // Mock OpenAI response format (route converts to Anthropic)
-      const mockOpenAIResponse = {
-        id: 'chatcmpl-123',
-        object: 'chat.completion',
-        created: 1234567890,
+      // Mock Anthropic response format (passthrough)
+      const mockAnthropicResponse = {
+        id: 'msg_123',
+        type: 'message',
+        role: 'assistant',
+        content: [{type: 'text', text: 'Hello'}],
         model: 'test-model',
-        choices: [{
-          index: 0,
-          message: {role: 'assistant', content: 'Hello'},
-          finish_reason: 'stop',
-        }],
-        usage: {prompt_tokens: 10, completion_tokens: 5, total_tokens: 15},
+        stop_reason: 'end_turn',
+        usage: {input_tokens: 10, output_tokens: 5},
       };
-      vi.mocked(callBackend).mockResolvedValue(mockOpenAIResponse);
+      vi.mocked(callBackend).mockResolvedValue(mockAnthropicResponse);
 
       const response = await app.inject({
         method: 'POST',
@@ -70,16 +67,16 @@ describe('Anthropic Routes', () => {
 
       expect(response.statusCode).toBe(200);
       const result = response.json();
-      // Verify Anthropic format after conversion
+      // Verify Anthropic format passthrough
       expect(result.type).toBe('message');
       expect(result.role).toBe('assistant');
       expect(result.content[0].type).toBe('text');
       expect(result.content[0].text).toBe('Hello');
       expect(result.usage.input_tokens).toBe(10);
       expect(result.usage.output_tokens).toBe(5);
-      // Backend is called with OpenAI endpoint
+      // Backend is called with Anthropic endpoint
       expect(callBackend).toHaveBeenCalledWith(
-        'http://localhost:8000/v1/chat/completions',
+        'http://localhost:8000/v1/messages',
         expect.objectContaining({model: 'test-model'}),
         'test-api-key',
       );

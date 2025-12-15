@@ -1,7 +1,7 @@
 import type {FastifyInstance, FastifyReply, FastifyRequest} from 'fastify';
 import fp from 'fastify-plugin';
 
-import type {AnthropicRequest, OpenAIRequest, OpenAIResponse} from '../types/index.js';
+import type {AnthropicRequest, AnthropicResponse} from '../types/index.js';
 import {callBackend, streamBackend} from '../services/backend.js';
 import {
   SSE_HEADERS,
@@ -9,50 +9,67 @@ import {
   createApiError,
   formatSseError,
   getBackendAuth,
-  anthropicToOpenAI,
-  openAIToAnthropic,
-  injectWebSearchPrompt,
-  convertOpenAIStreamToAnthropic,
-  estimateRequestTokens,
-  pipe,
 } from '../utils/index.js';
 
 // ============================================================================
-// Request Pipeline: Anthropic → preprocess → OpenAI → vLLM
+// Preprocessing - vLLM compatibility fixes
 // ============================================================================
 
-const preprocess = pipe<AnthropicRequest>(
-  injectWebSearchPrompt,
-);
+/** 
+ * Fixes vLLM bug: copies tool_use_id to id field for tool_result blocks.
+ * vLLM reads block.id instead of block.tool_use_id for tool_result.
+ * See: vllm/entrypoints/anthropic/serving_messages.py:140
+ */
+function normalizeToolIds(req: AnthropicRequest): AnthropicRequest {
+  const messages = req.messages.map((msg) => {
+    if (typeof msg.content === 'string') return msg;
+    if (!Array.isArray(msg.content)) return msg;
 
-const toOpenAI = (req: AnthropicRequest): OpenAIRequest =>
-  anthropicToOpenAI(preprocess(req));
+    const content = msg.content.map((block) => {
+      if (block.type === 'tool_result') {
+        const toolUseId = (block as {tool_use_id?: string}).tool_use_id;
+        if (toolUseId) {
+          return {...block, id: toolUseId};
+        }
+      }
+      return block;
+    });
+    return {...msg, content};
+  });
+
+  return {...req, messages};
+}
+
+/** Ensures last message is not from assistant (vLLM requirement). */
+function fixTrailingAssistant(req: AnthropicRequest): AnthropicRequest {
+  const lastMsg = req.messages[req.messages.length - 1];
+  if (lastMsg?.role === 'assistant') {
+    return {
+      ...req,
+      messages: [...req.messages, {role: 'user', content: 'Continue.'}],
+    };
+  }
+  return req;
+}
 
 // ============================================================================
-// Response Pipeline: vLLM → OpenAI → Anthropic
-// ============================================================================
-
-const toAnthropic = (res: OpenAIResponse, model: string) => openAIToAnthropic(res, model);
-
-// ============================================================================
-// Route
+// Route - Passthrough to vLLM Anthropic endpoint
 // ============================================================================
 
 async function anthropicRoutes(app: FastifyInstance): Promise<void> {
   app.post('/v1/messages', async (req: FastifyRequest, reply: FastifyReply) => {
-    const body = req.body as AnthropicRequest;
+    const rawBody = req.body as AnthropicRequest;
+    const body = fixTrailingAssistant(normalizeToolIds(rawBody));
     const backend = app.config.defaultBackend;
     const baseUrl = backend.url as string;
     const auth = getBackendAuth(backend, req.headers.authorization) ?? '';
     const model = backend.model || body.model;
 
-    // Pipeline: Anthropic → OpenAI → vLLM
-    const payload = {...toOpenAI(body), model};
+    const payload = {...body, model};
 
     try {
-      if (body.stream) return streamAnthropic(reply, baseUrl, payload, auth, model);
-      const res = await callBackend<OpenAIResponse>(`${baseUrl}/v1/chat/completions`, payload, auth);
-      return toAnthropic(res, model);
+      if (body.stream) return streamAnthropic(reply, baseUrl, payload, auth);
+      return await callBackend<AnthropicResponse>(`${baseUrl}/v1/messages`, payload, auth);
     } catch (e) {
       req.log.error({err: e}, 'Request failed');
       reply.code(StatusCodes.INTERNAL_SERVER_ERROR);
@@ -62,24 +79,20 @@ async function anthropicRoutes(app: FastifyInstance): Promise<void> {
 }
 
 // ============================================================================
-// Streaming: OpenAI SSE → Anthropic SSE
+// Streaming - Passthrough SSE
 // ============================================================================
 
 const streamAnthropic = async (
   reply: FastifyReply,
   baseUrl: string,
-  body: OpenAIRequest,
+  body: AnthropicRequest,
   auth: string,
-  model: string,
 ) => {
   reply.raw.writeHead(200, SSE_HEADERS);
 
   try {
-    const inputTokens = estimateRequestTokens(body.messages);
-    const stream = streamBackend(`${baseUrl}/v1/chat/completions`, {...body, stream: true}, auth);
-
-    // Pipeline: OpenAI stream → Anthropic stream
-    for await (const chunk of convertOpenAIStreamToAnthropic(stream, model, inputTokens)) {
+    const stream = streamBackend(`${baseUrl}/v1/messages`, {...body, stream: true}, auth);
+    for await (const chunk of stream) {
       reply.raw.write(chunk);
     }
   } catch (e) {

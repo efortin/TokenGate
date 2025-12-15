@@ -54,9 +54,9 @@ export async function* streamBackend(
   if (!response.ok) {
     const error = await response.text();
     // Log detailed error info for debugging
-    const reqBody = body as {messages?: unknown[]; model?: string; tools?: unknown[]};
+    const reqBody = body as { messages?: unknown[]; model?: string; tools?: unknown[] };
     const msgCount = reqBody.messages?.length ?? 0;
-    const lastMsg = reqBody.messages?.[msgCount - 1] as {role?: string; tool_calls?: unknown[]} | undefined;
+    const lastMsg = reqBody.messages?.[msgCount - 1] as { role?: string; tool_calls?: unknown[] } | undefined;
     console.error(`[streamBackend] Backend error ${response.status}:`, {
       url,
       model: reqBody.model,
@@ -75,12 +75,30 @@ export async function* streamBackend(
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
+  let buffer = '';
 
   try {
     while (true) {
-      const {done, value} = await reader.read();
+      const { done, value } = await reader.read();
       if (done) break;
-      yield decoder.decode(value, {stream: true});
+      const chunk = decoder.decode(value, { stream: true });
+      buffer += chunk;
+
+      // Debug: log important SSE events
+      if (chunk.includes('message_stop') || chunk.includes('message_delta')) {
+        // Extract the event data for logging
+        const lines = buffer.split('\n');
+        for (const line of lines) {
+          if (line.startsWith('data: ') && (line.includes('message_stop') || line.includes('message_delta'))) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              console.log('[stream] SSE event:', JSON.stringify(data));
+            } catch { /* ignore parse errors */ }
+          }
+        }
+      }
+
+      yield chunk;
     }
   } finally {
     reader.releaseLock();
@@ -93,15 +111,15 @@ export async function discoverModels(
   apiKey?: string,
 ): Promise<string[]> {
   try {
-    const headers: Record<string, string> = {'Content-Type': 'application/json'};
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (apiKey) {
       headers['Authorization'] = `Bearer ${apiKey}`;
     }
 
-    const response = await fetch(`${url}/v1/models`, {headers});
+    const response = await fetch(`${url}/v1/models`, { headers });
     if (!response.ok) return [];
 
-    const data = (await response.json()) as {data?: {id: string}[]};
+    const data = (await response.json()) as { data?: { id: string }[] };
     return data.data?.map((m) => m.id) ?? [];
   } catch {
     return [];
@@ -111,7 +129,7 @@ export async function discoverModels(
 /** Checks if a backend is healthy. */
 export async function checkHealth(url: string): Promise<boolean> {
   try {
-    const response = await fetch(`${url}/health`, {method: 'GET'});
+    const response = await fetch(`${url}/health`, { method: 'GET' });
     return response.ok;
   } catch {
     return false;

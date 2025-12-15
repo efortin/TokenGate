@@ -136,58 +136,89 @@ async function anthropicRoutes(app: FastifyInstance): Promise<void> {
 // ============================================================================
 
 /**
- * Filters SSE chunks to remove empty text content blocks.
- * Tracks indices of empty text blocks and filters their related events.
+ * Filters a single SSE chunk to remove empty text content block events.
+ * Handles event: + data: pairs correctly - when skipping a data line,
+ * also skips its preceding event line.
  */
-function* filterSseEmptyTextBlocks(chunks: string[]): Generator<string> {
-  const emptyBlockIndices = new Set<number>();
+function filterSseChunk(
+  chunk: string,
+  emptyBlockIndices: Set<number>,
+): string {
+  const lines = chunk.split('\n');
+  const outputLines: string[] = [];
+  let pendingEventLine: string | null = null;
 
-  for (const chunk of chunks) {
-    const lines = chunk.split('\n');
-    const outputLines: string[] = [];
-
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) {
-        outputLines.push(line);
-        continue;
-      }
-
-      const dataStr = line.slice(6);
-      if (dataStr === '[DONE]') {
-        outputLines.push(line);
-        continue;
-      }
-
-      try {
-        const data = JSON.parse(dataStr);
-
-        // Track empty text blocks on content_block_start
-        if (data.type === 'content_block_start' && data.content_block?.type === 'text') {
-          if (data.content_block.text === '') {
-            emptyBlockIndices.add(data.index);
-            continue; // Skip this event
-          }
-        }
-
-        // Skip events for tracked empty blocks
-        if (data.index !== undefined && emptyBlockIndices.has(data.index)) {
-          if (data.type === 'content_block_delta' || data.type === 'content_block_stop') {
-            continue;
-          }
-        }
-
-        outputLines.push(line);
-      } catch {
-        // Not valid JSON, pass through
-        outputLines.push(line);
-      }
+  for (const line of lines) {
+    // Track event: lines to pair with their data: line
+    if (line.startsWith('event: ')) {
+      pendingEventLine = line;
+      continue;
     }
 
-    const output = outputLines.join('\n');
-    if (output.trim()) {
-      yield output;
+    if (!line.startsWith('data: ')) {
+      // Empty line or other - output pending event if any, then this line
+      if (pendingEventLine) {
+        outputLines.push(pendingEventLine);
+        pendingEventLine = null;
+      }
+      outputLines.push(line);
+      continue;
+    }
+
+    const dataStr = line.slice(6);
+    if (dataStr === '[DONE]') {
+      if (pendingEventLine) {
+        outputLines.push(pendingEventLine);
+        pendingEventLine = null;
+      }
+      outputLines.push(line);
+      continue;
+    }
+
+    try {
+      const data = JSON.parse(dataStr);
+
+      // Track empty text blocks on content_block_start
+      if (data.type === 'content_block_start' && data.content_block?.type === 'text') {
+        if (data.content_block.text === '') {
+          emptyBlockIndices.add(data.index);
+          // Skip both event: and data: lines
+          pendingEventLine = null;
+          continue;
+        }
+      }
+
+      // Skip events for tracked empty blocks
+      if (data.index !== undefined && emptyBlockIndices.has(data.index)) {
+        if (data.type === 'content_block_delta' || data.type === 'content_block_stop') {
+          // Skip both event: and data: lines
+          pendingEventLine = null;
+          continue;
+        }
+      }
+
+      // Keep this event - output both event: and data: lines
+      if (pendingEventLine) {
+        outputLines.push(pendingEventLine);
+        pendingEventLine = null;
+      }
+      outputLines.push(line);
+    } catch {
+      // Not valid JSON, pass through both lines
+      if (pendingEventLine) {
+        outputLines.push(pendingEventLine);
+        pendingEventLine = null;
+      }
+      outputLines.push(line);
     }
   }
+
+  // Output any remaining pending event line
+  if (pendingEventLine) {
+    outputLines.push(pendingEventLine);
+  }
+
+  return outputLines.join('\n');
 }
 
 const streamAnthropic = async (
@@ -197,18 +228,14 @@ const streamAnthropic = async (
   auth: string,
 ) => {
   reply.raw.writeHead(200, SSE_HEADERS);
+  const emptyBlockIndices = new Set<number>();
 
   try {
     const stream = streamBackend(`${baseUrl}/v1/messages`, { ...body, stream: true }, auth);
-    const chunks: string[] = [];
 
+    // TEMP: Disable filtering to test if it's causing tool call corruption
     for await (const chunk of stream) {
-      chunks.push(chunk);
-    }
-
-    // Filter and write chunks
-    for (const filteredChunk of filterSseEmptyTextBlocks(chunks)) {
-      reply.raw.write(filteredChunk);
+      reply.raw.write(chunk);
     }
   } catch (e) {
     reply.raw.write(formatSseError(e));
@@ -219,4 +246,3 @@ const streamAnthropic = async (
 };
 
 export default fp(anthropicRoutes, { name: 'anthropic-routes' });
-

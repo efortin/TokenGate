@@ -1,0 +1,47 @@
+name: Test Backend Connection
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: [self-hosted, linux, x64]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Display VLLM endpoint
+        run: echo "VLLM Endpoint: ${{ secrets.VLLM_ENDPOINT }}"
+
+      - name: Test network connectivity
+        run: |
+          echo "Testing ping..."
+          ping -c 2 $(echo ${{ secrets.VLLM_ENDPOINT }} | cut -d'/' -f3) || echo "Ping failed (may be normal for HTTP-only servers)"
+
+      - name: Test HTTP connection
+        run: |
+          echo "Testing HTTP connection..."
+          curl -v -X GET "${{ secrets.VLLM_ENDPOINT }}/v1/models" 2>&1 || echo "Connection failed"
+
+      - name: Set up Node.js
+        if: success() || failure()
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        if: success() || failure()
+        run: npm install
+
+      - name: Run quick connectivity test
+        if: success() || failure()
+        env:
+          TOKTOKEN_KEY: ${{ secrets.TOKTOKEN_KEY }}
+          VLLM_API_KEY: ${{ secrets.VLLM_API_KEY }}
+          VLLM_ENDPOINT: ${{ secrets.VLLM_ENDPOINT }}
+        run: |
+          echo "Backend URL: ${{ secrets.VLLM_ENDPOINT }}"
+          echo "Running connectivity test..."
+          npx tsx tests/integration/backend.integration.ts ${{ secrets.VLLM_ENDPOINT }}

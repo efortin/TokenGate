@@ -135,19 +135,45 @@ async function anthropicRoutes(app: FastifyInstance): Promise<void> {
  * 
  * Also injects calculated input_tokens from the request to ensure 
  * Claude Code displays correct token counts even with parallel requests.
+ * 
+ * Filters out empty text content blocks to prevent "(no content)" display.
+ * 
+ * IMPORTANT: Handles event: + data: line pairs correctly - when filtering
+ * a data: line, also skips the preceding event: line.
  */
-function enrichSseChunk(chunk: string, calculatedInputTokens?: number): string {
+function enrichSseChunk(
+  chunk: string,
+  calculatedInputTokens: number | undefined,
+  emptyBlockIndices: Set<number>,
+): string {
   const lines = chunk.split('\n');
   const outputLines: string[] = [];
+  let pendingEventLine: string | null = null;
 
   for (const line of lines) {
+    // Track event: lines - they must be paired with their data: line
+    if (line.startsWith('event: ')) {
+      pendingEventLine = line;
+      continue;
+    }
+
+    // Handle non-data lines (empty lines, etc)
     if (!line.startsWith('data: ')) {
+      // Output any pending event line first
+      if (pendingEventLine) {
+        outputLines.push(pendingEventLine);
+        pendingEventLine = null;
+      }
       outputLines.push(line);
       continue;
     }
 
     const dataStr = line.slice(6);
     if (dataStr === '[DONE]') {
+      if (pendingEventLine) {
+        outputLines.push(pendingEventLine);
+        pendingEventLine = null;
+      }
       outputLines.push(line);
       continue;
     }
@@ -168,6 +194,10 @@ function enrichSseChunk(chunk: string, calculatedInputTokens?: number): string {
         if (calculatedInputTokens !== undefined && data.message.usage) {
           data.message.usage.input_tokens = calculatedInputTokens;
         }
+        if (pendingEventLine) {
+          outputLines.push(pendingEventLine);
+          pendingEventLine = null;
+        }
         outputLines.push(`data: ${JSON.stringify(data)}`);
         continue;
       }
@@ -175,15 +205,52 @@ function enrichSseChunk(chunk: string, calculatedInputTokens?: number): string {
       // Also update message_delta usage if we have calculated tokens
       if (data.type === 'message_delta' && data.usage && calculatedInputTokens !== undefined) {
         data.usage.input_tokens = calculatedInputTokens;
+        if (pendingEventLine) {
+          outputLines.push(pendingEventLine);
+          pendingEventLine = null;
+        }
         outputLines.push(`data: ${JSON.stringify(data)}`);
         continue;
       }
 
+      // Track and filter empty text blocks (causes "(no content)" display)
+      if (data.type === 'content_block_start' && data.content_block?.type === 'text') {
+        if (data.content_block.text === '') {
+          emptyBlockIndices.add(data.index);
+          // Skip both event: and data: lines
+          pendingEventLine = null;
+          continue;
+        }
+      }
+
+      // Skip events for tracked empty text blocks
+      if (data.index !== undefined && emptyBlockIndices.has(data.index)) {
+        if (data.type === 'content_block_delta' || data.type === 'content_block_stop') {
+          // Skip both event: and data: lines
+          pendingEventLine = null;
+          continue;
+        }
+      }
+
+      // Keep this event - output both event: and data: lines
+      if (pendingEventLine) {
+        outputLines.push(pendingEventLine);
+        pendingEventLine = null;
+      }
       outputLines.push(line);
     } catch {
-      // Not valid JSON, pass through
+      // Not valid JSON, pass through both lines
+      if (pendingEventLine) {
+        outputLines.push(pendingEventLine);
+        pendingEventLine = null;
+      }
       outputLines.push(line);
     }
+  }
+
+  // Output any remaining pending event line
+  if (pendingEventLine) {
+    outputLines.push(pendingEventLine);
   }
 
   return outputLines.join('\n');
@@ -204,11 +271,16 @@ const streamAnthropic = async (
     (body as { tools?: unknown[] }).tools as Parameters<typeof calculateTokenCount>[2],
   );
 
+  // Track empty text block indices to filter across chunks
+  const emptyBlockIndices = new Set<number>();
+
   try {
     const stream = streamBackend(`${baseUrl}/v1/messages`, { ...body, stream: true }, auth);
     for await (const chunk of stream) {
-      const enriched = enrichSseChunk(chunk, calculatedInputTokens);
-      reply.raw.write(enriched);
+      const enriched = enrichSseChunk(chunk, calculatedInputTokens, emptyBlockIndices);
+      if (enriched.trim()) {
+        reply.raw.write(enriched);
+      }
     }
   } catch (e) {
     reply.raw.write(formatSseError(e));

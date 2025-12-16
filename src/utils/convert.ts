@@ -356,6 +356,14 @@ export async function* convertOpenAIStreamToAnthropic(
       }
 
       if (chunk.usage) {
+        console.log('[stream] vLLM usage chunk:', {
+          prompt_tokens: chunk.usage.prompt_tokens,
+          completion_tokens: chunk.usage.completion_tokens,
+          total_tokens: chunk.usage.total_tokens,
+          estimatedInputTokens,
+          currentOutputTokens: outputTokens,
+          hasChoices: !!chunk.choices?.length,
+        });
         inputTokens = chunk.usage.prompt_tokens || inputTokens;
         if (chunk.usage.completion_tokens) {
           outputTokens = chunk.usage.completion_tokens;
@@ -365,10 +373,17 @@ export async function* convertOpenAIStreamToAnthropic(
       const choice = chunk.choices?.[0];
       if (!choice) {
         if (chunk.usage && finalStopReason && !messageStopped) {
+          // Use our local outputTokens counter - vLLM's completion_tokens is often incomplete in streaming
+          const finalOutputTokens = Math.max(outputTokens, chunk.usage.completion_tokens || 0);
+          console.log('[stream] Final usage:', {
+            vllmCompletionTokens: chunk.usage.completion_tokens,
+            localOutputTokens: outputTokens,
+            finalOutputTokens,
+          });
           yield `event: message_delta\ndata: ${JSON.stringify({
             type: 'message_delta',
             delta: {stop_reason: finalStopReason, stop_sequence: null},
-            usage: {input_tokens: chunk.usage.prompt_tokens || inputTokens, output_tokens: chunk.usage.completion_tokens || outputTokens},
+            usage: {input_tokens: chunk.usage.prompt_tokens || inputTokens, output_tokens: finalOutputTokens},
           })}\n\n`;
           yield `event: message_stop\ndata: ${JSON.stringify({type: 'message_stop'})}\n\n`;
           messageStopped = true;

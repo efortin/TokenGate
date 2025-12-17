@@ -81,32 +81,43 @@ export interface OpenAIResponse {
   };
 }
 
-/** Backend configuration. */
-export interface BackendConfig {
-  name: string;
-  url: string;
-  apiKey: string;
-  model: string;
+import { z } from 'zod';
+
+// =============================================================================
+// Config Schemas (Zod) - Runtime validated
+// =============================================================================
+
+/** Backend configuration schema. */
+export const BackendConfigSchema = z.object({
+  name: z.string().default('vllm'),
+  url: z.string().default('http://localhost:8000'),
+  apiKey: z.string().default(''),
+  model: z.string().default(''),
   /** Optional temperature override (0.0-2.0). If set, overrides client temperature. */
-  temperature?: number;
-}
+  temperature: z.coerce.number().min(0).max(2).optional(),
+});
 
-/** Router configuration loaded from environment. */
-export interface RouterConfig {
-  port: number;
-  host: string;
-  apiKey: string;
-  defaultBackend: BackendConfig;
-  logLevel: 'debug' | 'info' | 'warn' | 'error';
-  logPretty: boolean;
-  logFilePath?: string;
-}
+/** Router configuration schema (loaded from environment). */
+export const RouterConfigSchema = z.object({
+  port: z.coerce.number().int().min(1).max(65535).default(3456),
+  host: z.string().default('0.0.0.0'),
+  apiKey: z.string().default(''),
+  defaultBackend: BackendConfigSchema,
+  logLevel: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+  logPretty: z.coerce.boolean().default(false),
+  logFilePath: z.string().optional(),
+});
 
-/** Application configuration used at runtime. */
-export interface AppConfig {
-  port: number;
-  host: string;
-  apiKey: string;
-  defaultBackend: BackendConfig;
-  logLevel: 'debug' | 'info' | 'warn' | 'error';
-}
+/** Application configuration schema (runtime subset). */
+export const AppConfigSchema = z.object({
+  port: z.coerce.number().int().min(1).max(65535),
+  host: z.string(),
+  apiKey: z.string(),
+  defaultBackend: BackendConfigSchema,
+  logLevel: z.enum(['debug', 'info', 'warn', 'error']),
+});
+
+// Inferred types from schemas
+export type BackendConfig = z.infer<typeof BackendConfigSchema>;
+export type RouterConfig = z.infer<typeof RouterConfigSchema>;
+export type AppConfig = z.infer<typeof AppConfigSchema>;

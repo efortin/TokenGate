@@ -1,4 +1,4 @@
-# Token-Gate
+# Toktoken
 
 ![CI](https://github.com/efortin/token-gate/actions/workflows/ci.yml/badge.svg) ![codecov](https://codecov.io/gh/efortin/token-gate/graph/badge.svg) [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue?logo=typescript&logoColor=white)](https://www.typescriptlang.org/) [![Node](https://img.shields.io/badge/Node.js-20+-339933?logo=node.js&logoColor=white)](https://nodejs.org/) [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 

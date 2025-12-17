@@ -39,13 +39,13 @@ async function anthropicRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/v1/messages', async (req: FastifyRequest, reply: FastifyReply) => {
     const rawBody = req.body as AnthropicRequest;
-    
+
     // Debug: log tool names
     const tools = (rawBody as { tools?: { name: string }[] }).tools;
     if (tools && tools.length > 0) {
       req.log.debug({ toolNames: tools.map(t => t.name) }, 'Tools in request');
     }
-    
+
     // Remove unsupported tools (WebSearch - use MCP brave-search instead)
     const anthropicBody = removeUnsupportedTools(rawBody);
     const backend = app.config.defaultBackend;
@@ -57,6 +57,7 @@ async function anthropicRoutes(app: FastifyInstance): Promise<void> {
     const openaiPayload = {
       ...anthropicToOpenAI(anthropicBody),
       model,
+      ...(backend.temperature !== undefined && { temperature: backend.temperature }),
     };
 
     // Calculate input tokens for accurate display
@@ -65,7 +66,7 @@ async function anthropicRoutes(app: FastifyInstance): Promise<void> {
       anthropicBody.system as Parameters<typeof calculateTokenCount>[1],
       (anthropicBody as { tools?: unknown[] }).tools as Parameters<typeof calculateTokenCount>[2],
     );
-    
+
     req.log.debug({
       calculatedInputTokens,
       messageCount: anthropicBody.messages?.length,
@@ -87,7 +88,7 @@ async function anthropicRoutes(app: FastifyInstance): Promise<void> {
       if (anthropicBody.stream) {
         return streamViaOpenAI(reply, baseUrl, openaiPayload, auth, model, calculatedInputTokens);
       }
-      
+
       // Non-streaming: call OpenAI endpoint and convert response
       const openaiResponse = await callBackend<OpenAIResponse>(
         `${baseUrl}/v1/chat/completions`,
@@ -134,10 +135,10 @@ const streamViaOpenAI = async (
       { ...openaiBody, stream: true, stream_options: { include_usage: true } },
       auth,
     );
-    
+
     // Convert OpenAI SSE stream to Anthropic SSE format
     const anthropicStream = convertOpenAIStreamToAnthropic(openaiStream, model, calculatedInputTokens);
-    
+
     for await (const chunk of anthropicStream) {
       reply.raw.write(chunk);
     }

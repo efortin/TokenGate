@@ -21,7 +21,7 @@ export interface AnthropicRequest {
   model: string;
   messages: AnthropicMessage[];
   max_tokens: number;
-  system?: string | {type: string; text: string}[];
+  system?: string | { type: string; text: string }[];
   stream?: boolean;
   [key: string]: unknown;
 }
@@ -44,7 +44,7 @@ export interface AnthropicResponse {
 export interface OpenAIMessageContent {
   type: string;
   text?: string;
-  image_url?: {url: string};
+  image_url?: { url: string };
   [key: string]: unknown;
 }
 
@@ -71,7 +71,7 @@ export interface OpenAIResponse {
   model: string;
   choices: {
     index: number;
-    message: {role: string; content: string | null};
+    message: { role: string; content: string | null };
     finish_reason: string;
   }[];
   usage: {
@@ -87,6 +87,8 @@ export interface BackendConfig {
   url: string;
   apiKey: string;
   model: string;
+  /** Optional temperature override (0.0-2.0). If set, overrides client temperature. */
+  temperature?: number;
 }
 
 /** Router configuration loaded from environment. */

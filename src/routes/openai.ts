@@ -1,8 +1,8 @@
-import type {FastifyInstance, FastifyReply, FastifyRequest} from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 
-import type {OpenAIRequest, OpenAIResponse} from '../types/index.js';
-import {callBackend, streamBackend} from '../services/backend.js';
+import type { OpenAIRequest, OpenAIResponse } from '../types/index.js';
+import { callBackend, streamBackend } from '../services/backend.js';
 import {
   SSE_HEADERS,
   StatusCodes,
@@ -41,14 +41,18 @@ async function openaiRoutes(app: FastifyInstance): Promise<void> {
     const baseUrl = backend.url as string;
     const auth = getBackendAuth(backend, req.headers.authorization) ?? '';
 
-    // Pipeline: transform → set model → send
-    const payload = {...transform(body), model: backend.model || body.model};
+    // Pipeline: transform → set model → apply temperature override if configured
+    const payload = {
+      ...transform(body),
+      model: backend.model || body.model,
+      ...(backend.temperature !== undefined && { temperature: backend.temperature }),
+    };
 
     try {
       if (body.stream) return stream(reply, baseUrl, payload, auth);
       return await callBackend<OpenAIResponse>(`${baseUrl}/v1/chat/completions`, payload, auth);
     } catch (e) {
-      req.log.error({err: e}, 'Request failed');
+      req.log.error({ err: e }, 'Request failed');
       reply.code(StatusCodes.INTERNAL_SERVER_ERROR);
       return createApiError(e instanceof Error ? e.message : 'Unknown error');
     }
@@ -59,21 +63,21 @@ async function openaiRoutes(app: FastifyInstance): Promise<void> {
 // Helpers
 // ============================================================================
 
-const handler = (app: FastifyInstance, useTransform: boolean) => 
+const handler = (app: FastifyInstance, useTransform: boolean) =>
   async (req: FastifyRequest, reply: FastifyReply) => {
     const body = req.body as OpenAIRequest;
     const backend = app.config.defaultBackend;
     const baseUrl = backend.url as string;
     const auth = getBackendAuth(backend, req.headers.authorization) ?? '';
-    const payload = useTransform 
-      ? {...transform(body), model: backend.model || body.model}
-      : {...body, model: backend.model || (body as {model?: string}).model};
+    const payload = useTransform
+      ? { ...transform(body), model: backend.model || body.model }
+      : { ...body, model: backend.model || (body as { model?: string }).model };
 
     try {
-      if ((body as {stream?: boolean}).stream) return stream(reply, baseUrl, payload, auth);
+      if ((body as { stream?: boolean }).stream) return stream(reply, baseUrl, payload, auth);
       return await callBackend(`${baseUrl}/v1/completions`, payload, auth);
     } catch (e) {
-      req.log.error({err: e}, 'Request failed');
+      req.log.error({ err: e }, 'Request failed');
       reply.code(StatusCodes.INTERNAL_SERVER_ERROR);
       return createApiError(e instanceof Error ? e.message : 'Unknown error');
     }
@@ -84,7 +88,7 @@ const stream = async (reply: FastifyReply, baseUrl: string, body: Record<string,
   let gen: AsyncGenerator<string>;
 
   try {
-    gen = streamBackend(url, {...body, stream: true}, auth);
+    gen = streamBackend(url, { ...body, stream: true }, auth);
     const first = await gen.next();
     if (first.done) throw new Error('Empty response');
     reply.raw.writeHead(200, SSE_HEADERS);
@@ -104,4 +108,4 @@ const stream = async (reply: FastifyReply, baseUrl: string, body: Record<string,
   reply.hijack();
 };
 
-export default fp(openaiRoutes, {name: 'openai-routes'});
+export default fp(openaiRoutes, { name: 'openai-routes' });

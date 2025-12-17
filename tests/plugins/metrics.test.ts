@@ -49,11 +49,12 @@ describe('Metrics Plugin', () => {
       expect(response.payload).toContain('llm_requests_total');
       expect(response.payload).toContain('llm_request_duration_seconds');
       expect(response.payload).toContain('llm_tokens_total');
+      expect(response.payload).toContain('inference_tokens_total');
     });
   });
 
-  describe('x-user-mail header', () => {
-    it('should extract user email from header', async () => {
+  describe('User email extraction', () => {
+    it('should extract user email from x-user-mail header', async () => {
       const response = await app.inject({
         method: 'GET',
         url: '/health',
@@ -65,7 +66,43 @@ describe('Metrics Plugin', () => {
       expect(response.statusCode).toBe(200);
     });
 
-    it('should default to anonymous when no header', async () => {
+    it('should extract email from JWT in Authorization header', async () => {
+      // Create a test JWT with email claim
+      const header = Buffer.from(JSON.stringify({alg: 'HS256'})).toString('base64');
+      const payload = Buffer.from(JSON.stringify({email: 'user@example.com'})).toString('base64');
+      const token = `${header}.${payload}.signature`;
+      
+      const response = await app.inject({
+        method: 'GET',
+        url: '/health',
+        headers: {
+          'authorization': `Bearer ${token}`,
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+    });
+
+    it('should use x-user-mail header over JWT email', async () => {
+      // Create a JWT with one email
+      const header = Buffer.from(JSON.stringify({alg: 'HS256'})).toString('base64');
+      const payload = Buffer.from(JSON.stringify({email: 'jwt@example.com'})).toString('base64');
+      const token = `${header}.${payload}.signature`;
+      
+      // But provide a different email in x-user-mail header
+      const response = await app.inject({
+        method: 'GET',
+        url: '/health',
+        headers: {
+          'authorization': `Bearer ${token}`,
+          'x-user-mail': 'header@example.com',
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+    });
+
+    it('should default to anonymous when no email source available', async () => {
       const response = await app.inject({
         method: 'GET',
         url: '/health',

@@ -1,6 +1,7 @@
 import type {FastifyInstance, FastifyRequest} from 'fastify';
 import fp from 'fastify-plugin';
 import {Registry, Counter, Histogram, collectDefaultMetrics} from 'prom-client';
+import {extractEmailFromAuth} from '../utils/auth.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -11,6 +12,7 @@ declare module 'fastify' {
       requestsTotal: Counter;
       requestDuration: Histogram;
       tokensTotal: Counter;
+      inferenceTokens: Counter;
       registry: Registry;
     };
   }
@@ -42,11 +44,21 @@ async function metricsPlugin(app: FastifyInstance): Promise<void> {
     registers: [registry],
   });
 
-  app.decorate('metrics', {requestsTotal, requestDuration, tokensTotal, registry});
+  const inferenceTokens = new Counter({
+    name: 'inference_tokens_total',
+    help: 'Total inference tokens used, tagged by user. This is a monotonic counter that only increases. Use rate() to calculate tokens per second.',
+    labelNames: ['user', 'model', 'type'],
+    registers: [registry],
+  });
+
+  app.decorate('metrics', {requestsTotal, requestDuration, tokensTotal, inferenceTokens, registry});
 
   app.addHook('onRequest', async (request: FastifyRequest) => {
-    request.userEmail =
-      (request.headers['x-user-mail'] as string) || 'anonymous';
+    // Try to get email from user_hash header first
+    // If not present, try to extract from Authorization header (JWT)
+    const authHeader = request.headers['authorization'] as string;
+    const email = extractEmailFromAuth(authHeader);
+    request.userEmail = email || (request.headers['user_hash'] as string) || 'unknown';
   });
 
   app.get('/metrics', async (_request, reply) => {

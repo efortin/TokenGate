@@ -1,5 +1,5 @@
 export {SSE_HEADERS, StatusCodes, ReasonPhrases, createApiError, formatSseError} from './http.js';
-export {isInternalService, getBackendAuth} from './auth.js';
+export {isInternalService, getBackendAuth, decodeJWT, extractEmailFromAuth, hashEmail} from './auth.js';
 export {getMimeType, isImageMimeType, sanitizeToolChoice} from './images.js';
 export {anthropicToOpenAI, openAIToAnthropic, removeUnsupportedTools, normalizeOpenAIToolIds, filterEmptyAssistantMessages, convertOpenAIStreamToAnthropic, sanitizeToolName} from './convert.js';
 export {countTokens, estimateRequestTokens, calculateTokenCount} from './tokens.js';

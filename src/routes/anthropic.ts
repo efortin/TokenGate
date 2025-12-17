@@ -14,6 +14,7 @@ import {
   openAIToAnthropic,
   convertOpenAIStreamToAnthropic,
   removeUnsupportedTools,
+  hashEmail,
 } from '../utils/index.js';
 
 // ============================================================================
@@ -67,6 +68,14 @@ async function anthropicRoutes(app: FastifyInstance): Promise<void> {
       (anthropicBody as { tools?: unknown[] }).tools as Parameters<typeof calculateTokenCount>[2],
     );
 
+    // Track tokens in metrics with user tag (hash email for privacy)
+    const userTag = req.userEmail ? hashEmail(req.userEmail) : 'unknown';
+    
+    app.metrics.inferenceTokens.inc(
+      { user: userTag, model: model, type: 'input' },
+      calculatedInputTokens
+    );
+
     req.log.debug({
       calculatedInputTokens,
       messageCount: anthropicBody.messages?.length,
@@ -104,6 +113,14 @@ async function anthropicRoutes(app: FastifyInstance): Promise<void> {
         content: anthropicResponse.content,
         usage: anthropicResponse.usage,
       }, 'Response from vLLM (converted)');
+
+      // Track output tokens (hash email for privacy)
+      if (anthropicResponse.usage?.output_tokens) {
+        app.metrics.inferenceTokens.inc(
+          { user: userTag, model: model, type: 'output' },
+          anthropicResponse.usage.output_tokens
+        );
+      }
 
       return anthropicResponse;
     } catch (e) {

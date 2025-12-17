@@ -95,7 +95,7 @@ async function anthropicRoutes(app: FastifyInstance): Promise<void> {
 
     try {
       if (anthropicBody.stream) {
-        return streamViaOpenAI(reply, baseUrl, openaiPayload, auth, model, calculatedInputTokens);
+        return streamViaOpenAI(reply, baseUrl, openaiPayload, auth, model, calculatedInputTokens, app, req);
       }
 
       // Non-streaming: call OpenAI endpoint and convert response
@@ -143,8 +143,17 @@ const streamViaOpenAI = async (
   auth: string,
   model: string,
   calculatedInputTokens: number,
+  app: FastifyInstance,
+  req: FastifyRequest,
 ) => {
   reply.raw.writeHead(200, SSE_HEADERS);
+
+  // Track input tokens for streaming requests
+  const userTag = req.userEmail ? hashEmail(req.userEmail) : 'unknown';
+  app.metrics.inferenceTokens.inc(
+    { user: userTag, model: model, type: 'input' },
+    calculatedInputTokens
+  );
 
   try {
     const openaiStream = streamBackend(
@@ -158,6 +167,25 @@ const streamViaOpenAI = async (
 
     for await (const chunk of anthropicStream) {
       reply.raw.write(chunk);
+      // Extract usage from chunk and track output tokens
+      const lines = chunk.split('\n');
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6).trim();
+          if (data === '[DONE]') continue;
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.usage?.output_tokens) {
+              app.metrics.inferenceTokens.inc(
+                { user: userTag, model: model, type: 'output' },
+                parsed.usage.output_tokens
+              );
+            }
+          } catch {
+            // Ignore parsing errors
+          }
+        }
+      }
     }
   } catch (e) {
     reply.raw.write(formatSseError(e));

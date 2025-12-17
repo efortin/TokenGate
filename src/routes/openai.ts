@@ -51,7 +51,7 @@ async function openaiRoutes(app: FastifyInstance): Promise<void> {
     };
 
     try {
-      if (body.stream) return stream(reply, baseUrl, payload, auth);
+      if (body.stream) return stream(reply, baseUrl, payload, auth, app, req);
       
       const response = await callBackend<OpenAIResponse>(`${baseUrl}/v1/chat/completions`, payload, auth);
       
@@ -98,7 +98,7 @@ const handler = (app: FastifyInstance, useTransform: boolean) =>
       : { ...body, model: backend.model || (body as { model?: string }).model };
 
     try {
-      if ((body as { stream?: boolean }).stream) return stream(reply, baseUrl, payload, auth);
+      if ((body as { stream?: boolean }).stream) return stream(reply, baseUrl, payload, auth, app, req);
       return await callBackend(`${baseUrl}/v1/completions`, payload, auth);
     } catch (e) {
       req.log.error({ err: e }, 'Request failed');
@@ -107,12 +107,24 @@ const handler = (app: FastifyInstance, useTransform: boolean) =>
     }
   };
 
-const stream = async (reply: FastifyReply, baseUrl: string, body: Record<string, unknown>, auth: string) => {
+const stream = async (reply: FastifyReply, baseUrl: string, body: Record<string, unknown>, auth: string, app: FastifyInstance, req: FastifyRequest) => {
   const url = `${baseUrl}/v1/chat/completions`;
   let gen: AsyncGenerator<string>;
 
+  // Track input tokens for streaming requests
+  const userTag = req.userEmail ? hashEmail(req.userEmail) : 'unknown';
+  const model = app.config.defaultBackend.model || (body as { model?: string }).model;
+  
+  const inputTokens = (body as { messages?: OpenAIMessage[] }).messages?.reduce((sum: number, msg: OpenAIMessage) =>
+    sum + (typeof msg.content === 'string' ? countTokens(msg.content) : 0), 0) || 0;
+  
+  app.metrics.inferenceTokens.inc(
+    { user: userTag, model: model, type: 'input' },
+    inputTokens
+  );
+
   try {
-    gen = streamBackend(url, { ...body, stream: true }, auth);
+    gen = streamBackend(url, { ...body, stream: true, stream_options: { include_usage: true } }, auth);
     const first = await gen.next();
     if (first.done) throw new Error('Empty response');
     reply.raw.writeHead(200, SSE_HEADERS);
@@ -123,7 +135,29 @@ const stream = async (reply: FastifyReply, baseUrl: string, body: Record<string,
   }
 
   try {
-    for await (const chunk of gen) reply.raw.write(chunk);
+    for await (const chunk of gen) {
+      reply.raw.write(chunk);
+      // Try to extract usage from chunk and track output tokens
+      const lines = chunk.split('\n');
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6).trim();
+          if (data === '[DONE]') continue;
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.usage?.completion_tokens && !parsed.usage?.prompt_tokens) {
+              // This is likely the final usage chunk with completion tokens
+              app.metrics.inferenceTokens.inc(
+                { user: userTag, model: model, type: 'output' },
+                parsed.usage.completion_tokens
+              );
+            }
+          } catch {
+            // Ignore parsing errors
+          }
+        }
+      }
+    }
   } catch (e) {
     reply.raw.write(formatSseError(e));
   }

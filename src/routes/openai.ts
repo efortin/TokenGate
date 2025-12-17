@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 
-import type { OpenAIRequest, OpenAIResponse } from '../types/index.js';
+import type { OpenAIRequest, OpenAIResponse, OpenAIMessage } from '../types/index.js';
 import { callBackend, streamBackend } from '../services/backend.js';
 import {
   SSE_HEADERS,
@@ -58,8 +58,8 @@ async function openaiRoutes(app: FastifyInstance): Promise<void> {
       // Track metrics (hash email for privacy)
       const userTag = req.userEmail ? hashEmail(req.userEmail) : 'unknown';
       
-      const inputTokens = payload.messages.reduce((sum: number, msg: { content?: string }) => 
-        sum + countTokens(msg.content || ''), 0
+      const inputTokens = payload.messages.reduce((sum: number, msg: OpenAIMessage) => 
+        sum + (typeof msg.content === 'string' ? countTokens(msg.content) : 0), 0
       );
       
       app.metrics.inferenceTokens.inc(

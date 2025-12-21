@@ -20,7 +20,7 @@ describe('ensureMistralMessageOrder', () => {
         // Should have: user, assistant (tool_calls), tool, assistant (inserted), user
         expect(result.messages).toHaveLength(5);
         expect(result.messages[3].role).toBe('assistant');
-        expect(result.messages[3].content).toBe('');
+        expect(result.messages[3].content).toBe('Understood.');
         expect(result.messages[4].role).toBe('user');
     });
 
@@ -46,7 +46,7 @@ describe('ensureMistralMessageOrder', () => {
         // Should insert assistant after last tool and before user
         expect(result.messages).toHaveLength(6);
         expect(result.messages[4].role).toBe('assistant');
-        expect(result.messages[4].content).toBe('');
+        expect(result.messages[4].content).toBe('Understood.');
         expect(result.messages[5].role).toBe('user');
     });
 
@@ -122,7 +122,7 @@ describe('ensureMistralMessageOrder', () => {
         // Should have normalized IDs and inserted assistant message
         expect(result.messages).toHaveLength(5);
         expect(result.messages[3].role).toBe('assistant');
-        expect(result.messages[3].content).toBe('');
+        expect(result.messages[3].content).toBe('Understood.');
 
         // IDs should be normalized to 9 chars
         const assistantMsg = result.messages[1] as { tool_calls?: { id: string }[] };

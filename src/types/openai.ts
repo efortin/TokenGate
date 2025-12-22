@@ -48,7 +48,7 @@ export const OpenAIResponseSchema = z.object({
     created: z.number(),
     model: z.string(),
     choices: z.array(OpenAIChoiceSchema),
-    usage: OpenAIUsageSchema,
+    usage: OpenAIUsageSchema.optional(),
 });
 
 // Inferred types from schemas

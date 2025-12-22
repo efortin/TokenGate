@@ -1,13 +1,13 @@
-import {describe, it, expect} from 'vitest';
-import {anthropicToOpenAI, openAIToAnthropic, removeUnsupportedTools, sanitizeToolName, normalizeOpenAIToolIds, filterEmptyAssistantMessages, convertOpenAIStreamToAnthropic} from '../../src/utils/convert.js';
-import type {AnthropicRequest, OpenAIResponse} from '../../src/types/index.js';
+import { describe, it, expect } from 'vitest';
+import { anthropicToOpenAI, openAIToAnthropic, removeUnsupportedTools, sanitizeToolName, normalizeOpenAIToolIds, filterEmptyAssistantMessages, convertOpenAIStreamToAnthropic } from '../../src/utils/convert.js';
+import type { AnthropicRequest, OpenAIResponse } from '../../src/types/index.js';
 
 describe('anthropicToOpenAI', () => {
   it('should convert simple text message', () => {
     const req: AnthropicRequest = {
       model: 'claude-3',
       max_tokens: 1024,
-      messages: [{role: 'user', content: 'Hello'}],
+      messages: [{ role: 'user', content: 'Hello' }],
     };
 
     const result = anthropicToOpenAI(req);
@@ -15,7 +15,7 @@ describe('anthropicToOpenAI', () => {
     expect(result.model).toBe('claude-3');
     expect(result.max_tokens).toBe(1024);
     expect(result.messages).toHaveLength(1);
-    expect(result.messages[0]).toEqual({role: 'user', content: 'Hello'});
+    expect(result.messages[0]).toEqual({ role: 'user', content: 'Hello' });
   });
 
   it('should convert string system message', () => {
@@ -23,26 +23,26 @@ describe('anthropicToOpenAI', () => {
       model: 'claude-3',
       max_tokens: 1024,
       system: 'You are helpful',
-      messages: [{role: 'user', content: 'Hi'}],
+      messages: [{ role: 'user', content: 'Hi' }],
     };
 
     const result = anthropicToOpenAI(req);
 
-    expect(result.messages[0]).toEqual({role: 'system', content: 'You are helpful'});
-    expect(result.messages[1]).toEqual({role: 'user', content: 'Hi'});
+    expect(result.messages[0]).toEqual({ role: 'system', content: 'You are helpful' });
+    expect(result.messages[1]).toEqual({ role: 'user', content: 'Hi' });
   });
 
   it('should convert array system message', () => {
     const req: AnthropicRequest = {
       model: 'claude-3',
       max_tokens: 1024,
-      system: [{type: 'text', text: 'Part 1'}, {type: 'text', text: 'Part 2'}],
-      messages: [{role: 'user', content: 'Hi'}],
+      system: [{ type: 'text', text: 'Part 1' }, { type: 'text', text: 'Part 2' }],
+      messages: [{ role: 'user', content: 'Hi' }],
     };
 
     const result = anthropicToOpenAI(req);
 
-    expect(result.messages[0]).toEqual({role: 'system', content: 'Part 1\nPart 2'});
+    expect(result.messages[0]).toEqual({ role: 'system', content: 'Part 1\nPart 2' });
   });
 
   it('should convert text content blocks', () => {
@@ -51,13 +51,13 @@ describe('anthropicToOpenAI', () => {
       max_tokens: 1024,
       messages: [{
         role: 'user',
-        content: [{type: 'text', text: 'Hello world'}],
+        content: [{ type: 'text', text: 'Hello world' }],
       }],
     };
 
     const result = anthropicToOpenAI(req);
 
-    expect(result.messages[0].content).toEqual([{type: 'text', text: 'Hello world'}]);
+    expect(result.messages[0].content).toEqual([{ type: 'text', text: 'Hello world' }]);
   });
 
   it('should convert image content blocks', () => {
@@ -68,7 +68,7 @@ describe('anthropicToOpenAI', () => {
         role: 'user',
         content: [{
           type: 'image',
-          source: {type: 'base64', media_type: 'image/png', data: 'abc123'},
+          source: { type: 'base64', media_type: 'image/png', data: 'abc123' },
         }],
       }],
     };
@@ -77,7 +77,7 @@ describe('anthropicToOpenAI', () => {
 
     expect(result.messages[0].content).toEqual([{
       type: 'image_url',
-      image_url: {url: 'data:image/png;base64,abc123'},
+      image_url: { url: 'data:image/png;base64,abc123' },
     }]);
   });
 
@@ -88,18 +88,18 @@ describe('anthropicToOpenAI', () => {
       messages: [{
         role: 'user',
         content: [
-          {type: 'text', text: 'What is this?'},
-          {type: 'image', source: {type: 'base64', media_type: 'image/jpeg', data: 'xyz'}},
+          { type: 'text', text: 'What is this?' },
+          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'xyz' } },
         ],
       }],
     };
 
     const result = anthropicToOpenAI(req);
-    const content = result.messages[0].content as {type: string}[];
+    const content = result.messages[0].content as { type: string }[];
 
     expect(content).toHaveLength(2);
-    expect(content[0]).toEqual({type: 'text', text: 'What is this?'});
-    expect(content[1]).toEqual({type: 'image_url', image_url: {url: 'data:image/jpeg;base64,xyz'}});
+    expect(content[0]).toEqual({ type: 'text', text: 'What is this?' });
+    expect(content[1]).toEqual({ type: 'image_url', image_url: { url: 'data:image/jpeg;base64,xyz' } });
   });
 
   it('should handle unknown content block types', () => {
@@ -108,13 +108,12 @@ describe('anthropicToOpenAI', () => {
       max_tokens: 1024,
       messages: [{
         role: 'user',
-        // @ts-expect-error testing unknown block type
-        content: [{type: 'unknown', data: 'test'}],
+         content: [{ type: 'unknown', data: 'test' }] as any,
       }],
     };
 
     const result = anthropicToOpenAI(req);
-    const content = result.messages[0].content as {type: string; text: string}[];
+    const content = result.messages[0].content as { type: string; text: string }[];
 
     expect(content[0].type).toBe('text');
     expect(content[0].text).toContain('unknown');
@@ -125,7 +124,7 @@ describe('anthropicToOpenAI', () => {
       model: 'claude-3',
       max_tokens: 1024,
       stream: true,
-      messages: [{role: 'user', content: 'Hi'}],
+      messages: [{ role: 'user', content: 'Hi' }],
     };
 
     const result = anthropicToOpenAI(req);
@@ -138,13 +137,15 @@ describe('anthropicToOpenAI', () => {
       model: 'claude-3',
       max_tokens: 1024,
       messages: [
-        {role: 'user', content: 'List files'},
-        {role: 'assistant', content: [{
-          type: 'tool_use',
-          id: 'toolu_abc123',
-          name: 'bash',
-          input: {command: 'ls'},
-        }]},
+        { role: 'user', content: 'List files' },
+        {
+          role: 'assistant', content: [{
+            type: 'tool_use',
+            id: 'toolu_abc123',
+            name: 'bash',
+            input: { command: 'ls' },
+          }]
+        },
       ],
     };
 
@@ -152,9 +153,9 @@ describe('anthropicToOpenAI', () => {
 
     expect(result.messages).toHaveLength(2);
     expect(result.messages[1].role).toBe('assistant');
-    const toolCalls = (result.messages[1] as {tool_calls?: unknown[]}).tool_calls;
+    const toolCalls = (result.messages[1] as { tool_calls?: unknown[] }).tool_calls;
     expect(toolCalls).toHaveLength(1);
-    expect((toolCalls as {id: string; function: {name: string}}[])[0].function.name).toBe('bash');
+    expect((toolCalls as { id: string; function: { name: string } }[])[0].function.name).toBe('bash');
   });
 
   it('should convert tool_result blocks to OpenAI tool messages', () => {
@@ -162,18 +163,22 @@ describe('anthropicToOpenAI', () => {
       model: 'claude-3',
       max_tokens: 1024,
       messages: [
-        {role: 'user', content: 'List files'},
-        {role: 'assistant', content: [{
-          type: 'tool_use',
-          id: 'toolu_abc123',
-          name: 'bash',
-          input: {command: 'ls'},
-        }]},
-        {role: 'user', content: [{
-          type: 'tool_result',
-          tool_use_id: 'toolu_abc123',
-          content: 'file1.txt\nfile2.txt',
-        }]},
+        { role: 'user', content: 'List files' },
+        {
+          role: 'assistant', content: [{
+            type: 'tool_use',
+            id: 'toolu_abc123',
+            name: 'bash',
+            input: { command: 'ls' },
+          }]
+        },
+        {
+          role: 'user', content: [{
+            type: 'tool_result',
+            tool_use_id: 'toolu_abc123',
+            content: 'file1.txt\nfile2.txt',
+          }]
+        },
       ],
     };
 
@@ -188,18 +193,22 @@ describe('anthropicToOpenAI', () => {
       model: 'claude-3',
       max_tokens: 1024,
       messages: [
-        {role: 'user', content: 'List files'},
-        {role: 'assistant', content: [{
-          type: 'tool_use',
-          id: 'toolu_abc123',
-          name: 'bash',
-          input: {command: 'ls'},
-        }]},
-        {role: 'user', content: [{
-          type: 'tool_result',
-          tool_use_id: 'toolu_abc123',
-          content: [{type: 'text', text: 'file1.txt'}],
-        }]},
+        { role: 'user', content: 'List files' },
+        {
+          role: 'assistant', content: [{
+            type: 'tool_use',
+            id: 'toolu_abc123',
+            name: 'bash',
+            input: { command: 'ls' },
+          }]
+        },
+        {
+          role: 'user', content: [{
+            type: 'tool_result',
+            tool_use_id: 'toolu_abc123',
+            content: [{ type: 'text', text: 'file1.txt' }],
+          }]
+        },
       ],
     };
 
@@ -215,17 +224,21 @@ describe('anthropicToOpenAI', () => {
       model: 'claude-3',
       max_tokens: 1024,
       messages: [
-        {role: 'user', content: 'List files'},
-        {role: 'assistant', content: [{
-          type: 'tool_use',
-          id: 'toolu_abc123',
-          name: 'bash',
-          input: {command: 'ls'},
-        }]},
-        {role: 'user', content: [
-          {type: 'tool_result', tool_use_id: 'toolu_abc123', content: 'file1.txt'},
-          {type: 'text', text: 'Now analyze this'},
-        ]},
+        { role: 'user', content: 'List files' },
+        {
+          role: 'assistant', content: [{
+            type: 'tool_use',
+            id: 'toolu_abc123',
+            name: 'bash',
+            input: { command: 'ls' },
+          }]
+        },
+        {
+          role: 'user', content: [
+            { type: 'tool_result', tool_use_id: 'toolu_abc123', content: 'file1.txt' },
+            { type: 'text', text: 'Now analyze this' },
+          ]
+        },
       ],
     };
 
@@ -234,11 +247,11 @@ describe('anthropicToOpenAI', () => {
     // Should have: user, assistant (tool_calls), tool
     // Should NOT have a 'user' message after 'tool' (Mistral rejects this)
     const roles = result.messages.map(m => m.role);
-    
+
     // Find the index of 'tool' message
     const toolIndex = roles.indexOf('tool');
     expect(toolIndex).toBeGreaterThan(-1);
-    
+
     // No 'user' should come after 'tool'
     const afterTool = roles.slice(toolIndex + 1);
     expect(afterTool.includes('user')).toBe(false);
@@ -248,16 +261,16 @@ describe('anthropicToOpenAI', () => {
     const req: AnthropicRequest = {
       model: 'claude-3',
       max_tokens: 1024,
-      messages: [{role: 'user', content: 'Hi'}],
+      messages: [{ role: 'user', content: 'Hi' }],
       tools: [{
         name: 'calculator',
         description: 'Perform math',
-        input_schema: {type: 'object', properties: {expr: {type: 'string'}}},
+        input_schema: { type: 'object', properties: { expr: { type: 'string' } } },
       }],
     };
 
     const result = anthropicToOpenAI(req);
-    const tools = result.tools as {type: string; function: {name: string}}[];
+    const tools = result.tools as { type: string; function: { name: string } }[];
 
     expect(tools).toHaveLength(1);
     expect(tools[0].type).toBe('function');
@@ -274,10 +287,10 @@ describe('openAIToAnthropic', () => {
       model: 'gpt-4',
       choices: [{
         index: 0,
-        message: {role: 'assistant', content: 'Hello there!'},
+        message: { role: 'assistant', content: 'Hello there!' },
         finish_reason: 'stop',
       }],
-      usage: {prompt_tokens: 10, completion_tokens: 5, total_tokens: 15},
+      usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
     };
 
     const result = openAIToAnthropic(res, 'test-model');
@@ -286,9 +299,9 @@ describe('openAIToAnthropic', () => {
     expect(result.type).toBe('message');
     expect(result.role).toBe('assistant');
     expect(result.model).toBe('test-model');
-    expect(result.content).toEqual([{type: 'text', text: 'Hello there!'}]);
+    expect(result.content).toEqual([{ type: 'text', text: 'Hello there!' }]);
     expect(result.stop_reason).toBe('end_turn');
-    expect(result.usage).toEqual({input_tokens: 10, output_tokens: 5});
+    expect(result.usage).toEqual({ input_tokens: 10, output_tokens: 5 });
   });
 
   it('should handle non-stop finish reason', () => {
@@ -299,7 +312,7 @@ describe('openAIToAnthropic', () => {
       model: 'gpt-4',
       choices: [{
         index: 0,
-        message: {role: 'assistant', content: 'Hello'},
+        message: { role: 'assistant', content: 'Hello' },
         finish_reason: 'length',
       }],
     };
@@ -317,14 +330,14 @@ describe('openAIToAnthropic', () => {
       model: 'gpt-4',
       choices: [{
         index: 0,
-        message: {role: 'assistant', content: 'Hello'},
+        message: { role: 'assistant', content: 'Hello' },
         finish_reason: 'stop',
       }],
     };
 
     const result = openAIToAnthropic(res, 'test-model');
 
-    expect(result.usage).toEqual({input_tokens: 0, output_tokens: 0});
+    expect(result.usage).toEqual({ input_tokens: 0, output_tokens: 0 });
   });
 
   it('should handle empty choices', () => {
@@ -338,7 +351,7 @@ describe('openAIToAnthropic', () => {
 
     const result = openAIToAnthropic(res, 'test-model');
 
-    expect(result.content).toEqual([{type: 'text', text: ''}]);
+    expect(result.content).toEqual([{ type: 'text', text: '' }]);
     expect(result.stop_reason).toBeNull();
   });
 });
@@ -348,15 +361,15 @@ describe('removeUnsupportedTools', () => {
     const req: AnthropicRequest = {
       model: 'claude-3',
       max_tokens: 1024,
-      messages: [{role: 'user', content: 'Hello'}],
+      messages: [{ role: 'user', content: 'Hello' }],
       tools: [
-        {name: 'WebSearch', description: 'Search', input_schema: {}},
-        {name: 'Bash', description: 'Run commands', input_schema: {}},
+        { name: 'WebSearch', description: 'Search', input_schema: {} },
+        { name: 'Bash', description: 'Run commands', input_schema: {} },
       ],
     };
 
     const result = removeUnsupportedTools(req);
-    const toolNames = (result.tools as {name: string}[]).map(t => t.name);
+    const toolNames = (result.tools as { name: string }[]).map(t => t.name);
 
     expect(toolNames).not.toContain('WebSearch');
     expect(toolNames).toContain('Bash');
@@ -366,16 +379,16 @@ describe('removeUnsupportedTools', () => {
     const req: AnthropicRequest = {
       model: 'claude-3',
       max_tokens: 1024,
-      messages: [{role: 'user', content: 'Hello'}],
+      messages: [{ role: 'user', content: 'Hello' }],
       tools: [
-        {name: 'WebSearch', description: '', input_schema: {}},
-        {name: 'mcp__brave-search__brave_web_search', description: '', input_schema: {}},
-        {name: 'mcp__brave-search__brave_local_search', description: '', input_schema: {}},
+        { name: 'WebSearch', description: '', input_schema: {} },
+        { name: 'mcp__brave-search__brave_web_search', description: '', input_schema: {} },
+        { name: 'mcp__brave-search__brave_local_search', description: '', input_schema: {} },
       ],
     };
 
     const result = removeUnsupportedTools(req);
-    const toolNames = (result.tools as {name: string}[]).map(t => t.name);
+    const toolNames = (result.tools as { name: string }[]).map(t => t.name);
 
     expect(toolNames).not.toContain('WebSearch');
     expect(toolNames).toContain('mcp__brave-search__brave_web_search');
@@ -386,7 +399,7 @@ describe('removeUnsupportedTools', () => {
     const req: AnthropicRequest = {
       model: 'claude-3',
       max_tokens: 1024,
-      messages: [{role: 'user', content: 'Hello'}],
+      messages: [{ role: 'user', content: 'Hello' }],
     };
 
     const result = removeUnsupportedTools(req);
@@ -398,7 +411,7 @@ describe('removeUnsupportedTools', () => {
     const req: AnthropicRequest = {
       model: 'claude-3',
       max_tokens: 1024,
-      messages: [{role: 'user', content: 'Hello'}],
+      messages: [{ role: 'user', content: 'Hello' }],
       tools: [],
     };
 
@@ -458,18 +471,20 @@ describe('anthropicToOpenAI edge cases', () => {
       model: 'claude-3',
       max_tokens: 1024,
       messages: [
-        {role: 'user', content: 'Test'},
-        {role: 'assistant', content: [{
-          type: 'tool_use',
-          id: 'toolu_123',
-          name: ' Glob',
-          input: {pattern: '*.ts'},
-        }]},
+        { role: 'user', content: 'Test' },
+        {
+          role: 'assistant', content: [{
+            type: 'tool_use',
+            id: 'toolu_123',
+            name: ' Glob',
+            input: { pattern: '*.ts' },
+          }]
+        },
       ],
     };
 
     const result = anthropicToOpenAI(req);
-    const toolCalls = (result.messages[1] as {tool_calls?: {function: {name: string}}[]}).tool_calls;
+    const toolCalls = (result.messages[1] as { tool_calls?: { function: { name: string } }[] }).tool_calls;
     expect(toolCalls?.[0].function.name).toBe('Glob');
   });
 
@@ -478,12 +493,12 @@ describe('anthropicToOpenAI edge cases', () => {
       model: 'claude-3',
       max_tokens: 1024,
       stream: true,
-      messages: [{role: 'user', content: 'Hi'}],
+      messages: [{ role: 'user', content: 'Hi' }],
     };
 
     const result = anthropicToOpenAI(req);
     expect(result.stream).toBe(true);
-    expect((result as {stream_options?: {include_usage: boolean}}).stream_options).toEqual({include_usage: true});
+    expect((result as { stream_options?: { include_usage: boolean } }).stream_options).toEqual({ include_usage: true });
   });
 
   it('should NOT add user message after tool messages', () => {
@@ -491,9 +506,9 @@ describe('anthropicToOpenAI edge cases', () => {
       model: 'claude-3',
       max_tokens: 1024,
       messages: [
-        {role: 'user', content: 'Test'},
-        {role: 'assistant', content: [{type: 'tool_use', id: 'tool_1', name: 'bash', input: {}}]},
-        {role: 'user', content: [{type: 'tool_result', tool_use_id: 'tool_1', content: 'result'}]},
+        { role: 'user', content: 'Test' },
+        { role: 'assistant', content: [{ type: 'tool_use', id: 'tool_1', name: 'bash', input: {} }] },
+        { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tool_1', content: 'result' }] },
       ],
     };
 
@@ -507,8 +522,8 @@ describe('anthropicToOpenAI edge cases', () => {
       model: 'claude-3',
       max_tokens: 1024,
       messages: [
-        {role: 'user', content: 'Hello'},
-        {role: 'assistant', content: 'Hi there'},
+        { role: 'user', content: 'Hello' },
+        { role: 'assistant', content: 'Hi there' },
       ],
     };
 
@@ -534,7 +549,7 @@ describe('openAIToAnthropic edge cases', () => {
           tool_calls: [{
             id: 'call_123',
             type: 'function',
-            function: {name: 'calculator', arguments: '{"expr": "2+2"}'},
+            function: { name: 'calculator', arguments: '{"expr": "2+2"}' },
           }],
         },
         finish_reason: 'tool_calls',
@@ -560,7 +575,7 @@ describe('openAIToAnthropic edge cases', () => {
           tool_calls: [{
             id: 'call_123',
             type: 'function',
-            function: {name: 'test', arguments: 'not valid json'},
+            function: { name: 'test', arguments: 'not valid json' },
           }],
         },
         finish_reason: 'tool_calls',
@@ -568,7 +583,7 @@ describe('openAIToAnthropic edge cases', () => {
     };
 
     const result = openAIToAnthropic(res, 'test-model');
-    const toolUse = result.content.find(c => c.type === 'tool_use') as {input: {raw?: string}};
+    const toolUse = result.content.find(c => c.type === 'tool_use') as { input: { raw?: string } };
     expect(toolUse.input.raw).toBe('not valid json');
   });
 });
@@ -586,7 +601,7 @@ describe('normalizeOpenAIToolIds - Mistral compatibility', () => {
       const req = {
         model: 'devstral',
         messages: [
-          {role: 'user', content: 'Hello'},
+          { role: 'user', content: 'Hello' },
           {
             role: 'assistant',
             content: null,
@@ -594,7 +609,7 @@ describe('normalizeOpenAIToolIds - Mistral compatibility', () => {
               index: 0,
               id: 'call_123abc',
               type: 'function',
-              function: {name: 'test', arguments: '{}'},
+              function: { name: 'test', arguments: '{}' },
             }],
           },
         ],
@@ -602,7 +617,7 @@ describe('normalizeOpenAIToolIds - Mistral compatibility', () => {
 
       const result = normalizeOpenAIToolIds(req);
       const toolCall = result.messages[1].tool_calls[0];
-      
+
       expect(toolCall.index).toBeUndefined();
       expect(toolCall.id).toBeDefined();
       expect(toolCall.type).toBe('function');
@@ -612,14 +627,14 @@ describe('normalizeOpenAIToolIds - Mistral compatibility', () => {
       const req = {
         model: 'devstral',
         messages: [
-          {role: 'user', content: 'Hi'},
+          { role: 'user', content: 'Hi' },
           {
             role: 'assistant',
             content: null,
             tool_calls: [{
               id: 'call_abc123',
               type: 'function',
-              function: {name: 'greet', arguments: '{"name":"world"}'},
+              function: { name: 'greet', arguments: '{"name":"world"}' },
             }],
           },
         ],
@@ -627,7 +642,7 @@ describe('normalizeOpenAIToolIds - Mistral compatibility', () => {
 
       const result = normalizeOpenAIToolIds(req);
       const toolCall = result.messages[1].tool_calls[0];
-      
+
       expect(toolCall.id).toBeDefined();
       expect(toolCall.function.name).toBe('greet');
     });
@@ -640,17 +655,17 @@ describe('normalizeOpenAIToolIds - Mistral compatibility', () => {
             role: 'assistant',
             content: null,
             tool_calls: [
-              {index: 0, id: 'call_1', type: 'function', function: {name: 'a', arguments: '{}'}},
-              {index: 1, id: 'call_2', type: 'function', function: {name: 'b', arguments: '{}'}},
-              {index: 2, id: 'call_3', type: 'function', function: {name: 'c', arguments: '{}'}},
+              { index: 0, id: 'call_1', type: 'function', function: { name: 'a', arguments: '{}' } },
+              { index: 1, id: 'call_2', type: 'function', function: { name: 'b', arguments: '{}' } },
+              { index: 2, id: 'call_3', type: 'function', function: { name: 'c', arguments: '{}' } },
             ],
           },
         ],
       };
 
       const result = normalizeOpenAIToolIds(req);
-      
-      result.messages[0].tool_calls.forEach((tc: {index?: number}) => {
+
+      result.messages[0].tool_calls.forEach((tc: { index?: number }) => {
         expect(tc.index).toBeUndefined();
       });
     });
@@ -661,14 +676,14 @@ describe('normalizeOpenAIToolIds - Mistral compatibility', () => {
       const req = {
         model: 'devstral',
         messages: [
-          {role: 'user', content: 'Hello'},
+          { role: 'user', content: 'Hello' },
           {
             role: 'assistant',
             content: null,
             tool_calls: [{
               id: 'call_very_long_id_that_needs_normalization',
               type: 'function',
-              function: {name: 'test', arguments: '{}'},
+              function: { name: 'test', arguments: '{}' },
             }],
           },
           {
@@ -682,7 +697,7 @@ describe('normalizeOpenAIToolIds - Mistral compatibility', () => {
       const result = normalizeOpenAIToolIds(req);
       const assistantToolCallId = result.messages[1].tool_calls[0].id;
       const toolMessageId = result.messages[2].tool_call_id;
-      
+
       // Both should be normalized to the same 9-char ID
       expect(assistantToolCallId).toHaveLength(9);
       expect(toolMessageId).toBe(assistantToolCallId);
@@ -699,7 +714,7 @@ describe('normalizeOpenAIToolIds - Mistral compatibility', () => {
           tool_calls: [{
             id: 'call_123',
             type: 'function',
-            function: {name: 'test', arguments: '{"key": "value", "num": 42}'},
+            function: { name: 'test', arguments: '{"key": "value", "num": 42}' },
           }],
         }],
       };
@@ -717,7 +732,7 @@ describe('normalizeOpenAIToolIds - Mistral compatibility', () => {
           tool_calls: [{
             id: 'call_123',
             type: 'function',
-            function: {name: 'test', arguments: '{"key": "value"'},  // Missing closing brace
+            function: { name: 'test', arguments: '{"key": "value"' },  // Missing closing brace
           }],
         }],
       };
@@ -735,7 +750,7 @@ describe('normalizeOpenAIToolIds - Mistral compatibility', () => {
           tool_calls: [{
             id: 'call_123',
             type: 'function',
-            function: {name: 'test', arguments: 'not valid json at all'},
+            function: { name: 'test', arguments: 'not valid json at all' },
           }],
         }],
       };
@@ -753,7 +768,7 @@ describe('normalizeOpenAIToolIds - Mistral compatibility', () => {
           tool_calls: [{
             id: 'call_123',
             type: 'function',
-            function: {name: 'test', arguments: null},
+            function: { name: 'test', arguments: null },
           }],
         }],
       };
@@ -771,8 +786,8 @@ describe('filterEmptyAssistantMessages', () => {
     const req = {
       model: 'devstral',
       messages: [
-        {role: 'user', content: 'Hello'},
-        {role: 'assistant', content: 'Hi there!'},
+        { role: 'user', content: 'Hello' },
+        { role: 'assistant', content: 'Hi there!' },
       ],
     };
 
@@ -784,11 +799,11 @@ describe('filterEmptyAssistantMessages', () => {
     const req = {
       model: 'devstral',
       messages: [
-        {role: 'user', content: 'Search for X'},
+        { role: 'user', content: 'Search for X' },
         {
           role: 'assistant',
           content: null,
-          tool_calls: [{id: 'call_1', type: 'function', function: {name: 'search', arguments: '{}'}}],
+          tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'search', arguments: '{}' } }],
         },
       ],
     };
@@ -801,9 +816,9 @@ describe('filterEmptyAssistantMessages', () => {
     const req = {
       model: 'devstral',
       messages: [
-        {role: 'user', content: 'Hello'},
-        {role: 'assistant', content: ''},  // Empty content, no tool_calls
-        {role: 'user', content: 'How are you?'},
+        { role: 'user', content: 'Hello' },
+        { role: 'assistant', content: '' },  // Empty content, no tool_calls
+        { role: 'user', content: 'How are you?' },
       ],
     };
 
@@ -817,8 +832,8 @@ describe('filterEmptyAssistantMessages', () => {
     const req = {
       model: 'devstral',
       messages: [
-        {role: 'user', content: 'Hello'},
-        {role: 'assistant', content: null, tool_calls: null},
+        { role: 'user', content: 'Hello' },
+        { role: 'assistant', content: null, tool_calls: null },
       ],
     };
 
@@ -830,8 +845,8 @@ describe('filterEmptyAssistantMessages', () => {
     const req = {
       model: 'devstral',
       messages: [
-        {role: 'user', content: 'Hello'},
-        {role: 'assistant', content: '', tool_calls: []},
+        { role: 'user', content: 'Hello' },
+        { role: 'assistant', content: '', tool_calls: [] },
       ],
     };
 
@@ -843,16 +858,16 @@ describe('filterEmptyAssistantMessages', () => {
     const req = {
       model: 'devstral',
       messages: [
-        {role: 'system', content: 'You are helpful'},
-        {role: 'user', content: 'Hello'},
-        {role: 'assistant', content: ''},  // Should be removed
-        {role: 'tool', tool_call_id: 'call_1', content: 'result'},
+        { role: 'system', content: 'You are helpful' },
+        { role: 'user', content: 'Hello' },
+        { role: 'assistant', content: '' },  // Should be removed
+        { role: 'tool', tool_call_id: 'call_1', content: 'result' },
       ],
     };
 
     const result = filterEmptyAssistantMessages(req);
     expect(result.messages).toHaveLength(3);
-    expect(result.messages.map((m: {role: string}) => m.role)).toEqual(['system', 'user', 'tool']);
+    expect(result.messages.map((m: { role: string }) => m.role)).toEqual(['system', 'user', 'tool']);
   });
 });
 

@@ -11,6 +11,7 @@ import {
   getBackendAuth,
   normalizeOpenAIToolIds,
   filterEmptyAssistantMessages,
+  ensureMistralMessageOrder,
   sanitizeToolChoice,
   pipe,
   hashEmail,
@@ -25,6 +26,7 @@ const transform = pipe<OpenAIRequest>(
   filterEmptyAssistantMessages,
   normalizeOpenAIToolIds,
   sanitizeToolChoice,
+  ensureMistralMessageOrder,
 );
 
 // ============================================================================
@@ -52,28 +54,28 @@ async function openaiRoutes(app: FastifyInstance): Promise<void> {
 
     try {
       if (body.stream) return stream(reply, baseUrl, payload, auth, app, req);
-      
+
       const response = await callBackend<OpenAIResponse>(`${baseUrl}/v1/chat/completions`, payload, auth);
-      
+
       // Track metrics (hash email for privacy)
       const userTag = req.userEmail ? hashEmail(req.userEmail) : 'unknown';
-      
-      const inputTokens = payload.messages.reduce((sum: number, msg: OpenAIMessage) => 
+
+      const inputTokens = payload.messages.reduce((sum: number, msg: OpenAIMessage) =>
         sum + (typeof msg.content === 'string' ? countTokens(msg.content) : 0), 0
       );
-      
+
       app.metrics.inferenceTokens.inc(
         { user: userTag, model: backend.model || body.model, type: 'input' },
         inputTokens
       );
-      
+
       if (response.usage?.completion_tokens) {
         app.metrics.inferenceTokens.inc(
           { user: userTag, model: backend.model || body.model, type: 'output' },
           response.usage.completion_tokens
         );
       }
-      
+
       return response;
     } catch (e) {
       req.log.error({ err: e }, 'Request failed');
@@ -114,10 +116,10 @@ const stream = async (reply: FastifyReply, baseUrl: string, body: Record<string,
   // Track input tokens for streaming requests
   const userTag = req.userEmail ? hashEmail(req.userEmail) : 'unknown';
   const model = app.config.defaultBackend.model || (body as { model?: string }).model;
-  
+
   const inputTokens = (body as { messages?: OpenAIMessage[] }).messages?.reduce((sum: number, msg: OpenAIMessage) =>
     sum + (typeof msg.content === 'string' ? countTokens(msg.content) : 0), 0) || 0;
-  
+
   app.metrics.inferenceTokens.inc(
     { user: userTag, model: model, type: 'input' },
     inputTokens

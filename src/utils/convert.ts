@@ -226,6 +226,33 @@ export function filterEmptyAssistantMessages(req: OpenAIRequest): OpenAIRequest 
   return { ...req, messages: filteredMessages };
 }
 
+/**
+ * Ensures Mistral message ordering constraints are met.
+ * Mistral requires that after 'tool' messages, only 'assistant' or 'tool' messages can follow.
+ * If a 'user' message follows a 'tool' message, this inserts an assistant acknowledgment.
+ */
+export function ensureMistralMessageOrder(req: OpenAIRequest): OpenAIRequest {
+  const messages = [...req.messages];
+  const result: OpenAIRequest['messages'] = [];
+
+  for (let i = 0; i < messages.length; i++) {
+    const current = messages[i];
+    const previous = i > 0 ? messages[i - 1] : null;
+
+    // If previous message is 'tool' and current is 'user', insert an assistant message
+    if (previous?.role === 'tool' && current.role === 'user') {
+      result.push({
+        role: 'assistant',
+        content: 'Understood.',  // Mistral requires non-empty content when no tool_calls
+      });
+    }
+
+    result.push(current);
+  }
+
+  return { ...req, messages: result };
+}
+
 /** Tools to remove from requests (not supported by vLLM, use MCP alternatives). */
 const TOOLS_TO_REMOVE = ['WebSearch'];
 
